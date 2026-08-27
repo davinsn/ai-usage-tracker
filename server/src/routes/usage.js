@@ -6,7 +6,7 @@ const openrouter = require("../openrouter");
 router.post("/test", async (req, res) => {
     try {
         const response = await openrouter.chat.completions.create({
-            model: "openai/gpt-5",
+            model: "qwen/qwen3-235b-a22b",
             messages: [
                 {
                     role: "user",
