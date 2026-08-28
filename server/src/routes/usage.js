@@ -841,4 +841,41 @@ router.get(
     }
 );
 
+
+router.get("/recent", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                ue.id,
+                e.email,
+                ue.provider,
+                ue.product,
+                ue.model,
+                ue.event_type,
+                ue.session_id,
+                ue.interaction_id,
+                ue.occurred_at,
+                ue.latency_ms,
+                ue.prompt_tokens,
+                ue.response_tokens,
+                ue.total_tokens,
+                ue.total_cost_usd
+            FROM usage_events ue
+            LEFT JOIN employees e
+                ON ue.employee_id = e.id
+            WHERE ue.event_type = 'interaction_completed'
+            ORDER BY ue.occurred_at DESC
+            LIMIT 10
+        `);
+
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error("Recent activity error:", error);
+        res.status(500).json({
+            error: "Failed to load recent activity"
+        });
+    }
+});
+
 module.exports = router;

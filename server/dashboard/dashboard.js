@@ -90,7 +90,7 @@ const AI_PRODUCTS = {
 
     qwen: {
         name: 'Qwen',
-        provider: 'Qwen',
+        provider: 'OpenRouter',
         color: '#FF6A00'
     }
 };
@@ -442,8 +442,6 @@ function normalizeAIProduct(row) {
 
         alibaba: 'qwen',
 
-        qwen: 'qwen',
-
         openrouter: 'qwen'
 
     };
@@ -682,8 +680,6 @@ function formatProviderName(provider) {
         perplexity: 'Perplexity',
 
         alibaba: 'Alibaba',
-
-        qwen: 'Qwen',
 
         openrouter: 'OpenRouter'
 
@@ -1570,6 +1566,87 @@ function updateCostBreakdown(products) {
 
 }
 
+
+function updateRecentActivity(activity) {
+
+    const table =
+        document.getElementById('recentActivityTable');
+
+    if (!table) {
+        return;
+    }
+
+    table.innerHTML = '';
+
+    if (!Array.isArray(activity) || activity.length === 0) {
+
+        table.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align:center;">
+                    No recent AI activity
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    activity.forEach(row => {
+    const tr =
+        document.createElement('tr');
+
+    const date =
+        row.occurred_at
+            ? new Date(row.occurred_at)
+                .toLocaleString()
+            : '-';
+
+    const provider =
+        formatProviderName(
+            row.provider
+        );
+
+    const tokens =
+        Number(row.total_tokens) || 0;
+
+    const cost =
+        Number(row.total_cost_usd) || 0;
+
+    tr.innerHTML = `
+        <td>
+            ${row.email || '-'}
+        </td>
+
+        <td>
+            ${provider}
+        </td>
+
+        <td>
+            ${row.model || '-'}
+        </td>
+
+        <td>
+            ${row.event_type || '-'}
+        </td>
+
+        <td>
+            ${formatNumber(tokens)}
+        </td>
+
+        <td>
+            ${formatPreciseUsd(cost)}
+        </td>
+
+        <td>
+            ${date}
+        </td>
+    `;
+
+    table.appendChild(tr);
+});
+
+}
+
 // ============================================================
 // DEMO MODE CONTROLS
 // ============================================================
@@ -1645,17 +1722,12 @@ async function loadDashboard() {
     try {
 
         const [
-
             summaryResponse,
-
             employeeResponse,
-
             providerResponse,
-
             productResponse,
-
-            employeeProductResponse
-
+            employeeProductResponse,
+            recentResponse
         ] = await Promise.all([
 
             fetch(
@@ -1676,28 +1748,24 @@ async function loadDashboard() {
 
             fetch(
                 '/api/usage/by-employee-product'
-            )
+            ),
 
+            fetch(
+                '/api/usage/recent'
+            )
         ]);
 
         if (
-
             !summaryResponse.ok ||
-
             !employeeResponse.ok ||
-
             !providerResponse.ok ||
-
             !productResponse.ok ||
-
-            !employeeProductResponse.ok
-
+            !employeeProductResponse.ok ||
+            !recentResponse.ok
         ) {
-
             throw new Error(
                 'One or more API requests failed'
             );
-
         }
 
         const summary =
@@ -1714,6 +1782,9 @@ async function loadDashboard() {
 
         const employeeProducts =
             await employeeProductResponse.json();
+
+        const recentActivity =
+            await recentResponse.json();
 
         // ----------------------------------------------------
         // UPDATE DASHBOARD
@@ -1755,6 +1826,10 @@ async function loadDashboard() {
             employeeProducts
         );
 
+        updateRecentActivity(
+            recentActivity
+        );
+
         updateTable(
             employees
         );
@@ -1788,7 +1863,6 @@ async function loadDashboard() {
         );
 
     }
-
 }
 
 // ============================================================
