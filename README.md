@@ -117,7 +117,7 @@ OpenAI
 Google
 Anthropic
 Microsoft
-Meta
+Alibaba
 ```
 
 The provider is derived from the model identifier where applicable.
