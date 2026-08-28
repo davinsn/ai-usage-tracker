@@ -291,6 +291,29 @@ function getResponseTokens(row) {
 }
 
 // ============================================================
+// LATENCY
+// ============================================================
+
+function getRowLatency(row) {
+
+    if (!row) {
+        return null;
+    }
+
+    const value = Number(
+        row.avg_latency_ms ??
+        row.average_latency_ms ??
+        row.latency_ms ??
+        null
+    );
+
+    return Number.isFinite(value)
+        ? value
+        : null;
+
+}
+
+// ============================================================
 // COST
 // ============================================================
 
@@ -570,7 +593,17 @@ function calculateCostBreakdown(rows) {
 
             responseTokens: 0,
 
-            totalTokens: 0
+            totalTokens: 0,
+
+            sessions: 0,
+
+            // Latency is averaged, not summed, so we track a
+            // weighted sum + weight and divide once at the end.
+            latencyWeightedSum: 0,
+
+            latencyWeight: 0,
+
+            avgLatencyMs: null
 
         };
 
@@ -620,6 +653,33 @@ function calculateCostBreakdown(rows) {
         breakdown[product].totalTokens +=
             getTokenValue(row);
 
+        breakdown[product].sessions +=
+            getSessionValue(row);
+
+        // Weight each row's latency by its interaction count so
+        // a product isn't skewed by a low-volume row. Rows with
+        // no interaction count fall back to a weight of 1.
+        const rowLatency =
+            getRowLatency(row);
+
+        if (rowLatency !== null) {
+
+            const rowInteractions =
+                getInteractionValue(row);
+
+            const weight =
+                rowInteractions > 0
+                    ? rowInteractions
+                    : 1;
+
+            breakdown[product].latencyWeightedSum +=
+                rowLatency * weight;
+
+            breakdown[product].latencyWeight +=
+                weight;
+
+        }
+
     });
 
     Object.values(breakdown).forEach(item => {
@@ -634,6 +694,11 @@ function calculateCostBreakdown(rows) {
                 currentBnmRate;
 
         }
+
+        item.avgLatencyMs =
+            item.latencyWeight > 0
+                ? item.latencyWeightedSum / item.latencyWeight
+                : null;
 
     });
 
@@ -1168,7 +1233,7 @@ function updateCostBreakdown(rows) {
             <tr>
 
                 <td
-                    colspan="6"
+                    colspan="8"
                     style="text-align:center;"
                 >
                     No cost data available
@@ -1223,8 +1288,22 @@ function updateCostBreakdown(rows) {
 
                 <td>
                     ${formatNumber(
+                        item.sessions
+                    )}
+                </td>
+
+                <td>
+                    ${formatNumber(
                         item.totalTokens
                     )}
+                </td>
+
+                <td>
+                    ${
+                        item.avgLatencyMs !== null
+                            ? `${item.avgLatencyMs.toFixed(0)} ms`
+                            : 'N/A'
+                    }
                 </td>
 
                 <td>
@@ -1268,6 +1347,32 @@ function updateCostBreakdown(rows) {
             0
         );
 
+    const totalSessions =
+        items.reduce(
+            (sum, item) =>
+                sum + item.sessions,
+            0
+        );
+
+    const totalLatencyWeightedSum =
+        items.reduce(
+            (sum, item) =>
+                sum + item.latencyWeightedSum,
+            0
+        );
+
+    const totalLatencyWeight =
+        items.reduce(
+            (sum, item) =>
+                sum + item.latencyWeight,
+            0
+        );
+
+    const overallAvgLatencyMs =
+        totalLatencyWeight > 0
+            ? totalLatencyWeightedSum / totalLatencyWeight
+            : null;
+
     html += `
 
         <tr>
@@ -1284,8 +1389,22 @@ function updateCostBreakdown(rows) {
 
             <td>
                 ${formatNumber(
+                    totalSessions
+                )}
+            </td>
+
+            <td>
+                ${formatNumber(
                     totalTokens
                 )}
+            </td>
+
+            <td>
+                ${
+                    overallAvgLatencyMs !== null
+                        ? `${overallAvgLatencyMs.toFixed(0)} ms`
+                        : 'N/A'
+                }
             </td>
 
             <td>
