@@ -13,7 +13,6 @@ let providerSessionChart = null;
 let employeeAiChart = null;
 let latencyChart = null;
 let providerTokenChart = null;
-let tokenTypeChart = null;
 let providerCostChart = null;
 let costTypeChart = null;
 
@@ -22,14 +21,12 @@ let costTypeChart = null;
 // ============================================================
 
 let currentBnmRate = null;
+let currentBnmDate = null;
+let dashboardLoading = false;
 
 // ============================================================
 // DEMO MODE
 // ============================================================
-
-// Demo mode ONLY changes displayed cost.
-// It does NOT change token counts, interactions,
-// sessions, latency, or database values.
 
 let demoMode = false;
 let demoCostMultiplier = 1000;
@@ -37,24 +34,6 @@ let demoCostMultiplier = 1000;
 // ============================================================
 // AI PRODUCT CONFIGURATION
 // ============================================================
-
-// IMPORTANT:
-//
-// This configuration is ONLY for display names and colours.
-//
-// Pricing is NOT stored here.
-//
-// Actual cost comes from:
-//
-// OpenRouter
-//     ↓
-// Backend
-//     ↓
-// PostgreSQL
-//     ↓
-// total_cost_usd
-//
-// The dashboard does NOT calculate model pricing.
 
 const AI_PRODUCTS = {
 
@@ -93,11 +72,8 @@ const AI_PRODUCTS = {
         provider: 'OpenRouter',
         color: '#FF6A00'
     }
-};
 
-// ============================================================
-// DEFAULT CHART COLOUR
-// ============================================================
+};
 
 const DEFAULT_CHART_COLOR = '#64748B';
 
@@ -132,50 +108,36 @@ const chartOptions = {
 };
 
 // ============================================================
-// NUMBER FORMATTER
+// NUMBER HELPERS
 // ============================================================
 
-function formatNumber(value) {
+function safeNumber(value, fallback = 0) {
 
     const number = Number(value);
 
-    if (!Number.isFinite(number)) {
-        return '0';
-    }
-
-    return number.toLocaleString();
+    return Number.isFinite(number)
+        ? number
+        : fallback;
 
 }
 
-// ============================================================
-// USD FORMATTER
-// ============================================================
+function formatNumber(value) {
+
+    return safeNumber(value).toLocaleString();
+
+}
 
 function formatUsd(value) {
 
-    const number = Number(value);
-
-    if (!Number.isFinite(number)) {
-        return '$0.00';
-    }
+    const number = safeNumber(value);
 
     return '$' + number.toFixed(2);
 
 }
 
-// ============================================================
-// PRECISE USD FORMATTER
-// ============================================================
-
-// Useful for very small OpenRouter costs.
-
 function formatPreciseUsd(value) {
 
-    const number = Number(value);
-
-    if (!Number.isFinite(number)) {
-        return '$0.000000';
-    }
+    const number = safeNumber(value);
 
     if (number === 0) {
         return '$0.00';
@@ -189,19 +151,78 @@ function formatPreciseUsd(value) {
 
 }
 
-// ============================================================
-// MYR FORMATTER
-// ============================================================
-
 function formatMyr(value) {
 
-    const number = Number(value);
+    return 'RM' + safeNumber(value).toFixed(2);
 
-    if (!Number.isFinite(number)) {
-        return 'RM0.00';
+}
+
+// ============================================================
+// INTERACTION VALUE
+// ============================================================
+
+function getInteractionValue(row) {
+
+    if (!row) {
+        return 0;
     }
 
-    return 'RM' + number.toFixed(2);
+    const possibleValues = [
+
+        row.interactions,
+        row.interaction_count,
+        row.interactionCount,
+        row.count,
+        row.total_interactions,
+        row.totalInteractions
+
+    ];
+
+    for (const value of possibleValues) {
+
+        const number = Number(value);
+
+        if (Number.isFinite(number)) {
+            return number;
+        }
+
+    }
+
+    return 0;
+
+}
+
+// ============================================================
+// SESSION VALUE
+// ============================================================
+
+function getSessionValue(row) {
+
+    if (!row) {
+        return 0;
+    }
+
+    const possibleValues = [
+
+        row.sessions,
+        row.session_count,
+        row.sessionCount,
+        row.total_sessions,
+        row.totalSessions
+
+    ];
+
+    for (const value of possibleValues) {
+
+        const number = Number(value);
+
+        if (Number.isFinite(number)) {
+            return number;
+        }
+
+    }
+
+    return 0;
 
 }
 
@@ -215,18 +236,15 @@ function getTokenValue(row) {
         return 0;
     }
 
-    const totalTokens = Number(
+    const total = Number(
         row.total_tokens ??
         row.estimated_tokens ??
         row.tokens ??
         0
     );
 
-    if (
-        Number.isFinite(totalTokens) &&
-        totalTokens >= 0
-    ) {
-        return totalTokens;
+    if (Number.isFinite(total)) {
+        return total;
     }
 
     return 0;
@@ -243,11 +261,12 @@ function getPromptTokens(row) {
         return 0;
     }
 
-    return Number(
+    return safeNumber(
         row.prompt_tokens ??
         row.input_tokens ??
+        row.promptTokens ??
         0
-    ) || 0;
+    );
 
 }
 
@@ -261,31 +280,19 @@ function getResponseTokens(row) {
         return 0;
     }
 
-    return Number(
+    return safeNumber(
         row.response_tokens ??
         row.completion_tokens ??
         row.output_tokens ??
+        row.responseTokens ??
         0
-    ) || 0;
+    );
 
 }
 
 // ============================================================
-// OPENROUTER TOTAL COST
+// COST
 // ============================================================
-
-// IMPORTANT:
-//
-// The dashboard DOES NOT calculate pricing.
-//
-// The backend should store:
-//
-// input_cost_usd
-// output_cost_usd
-// total_cost_usd
-//
-// These values originate from the OpenRouter request/response
-// processing performed by the backend.
 
 function getRowCost(row) {
 
@@ -293,22 +300,15 @@ function getRowCost(row) {
         return 0;
     }
 
-    const cost = Number(
+    return safeNumber(
         row.total_cost_usd ??
         row.total_cost ??
         row.cost_usd ??
+        row.cost ??
         0
     );
 
-    return Number.isFinite(cost)
-        ? cost
-        : 0;
-
 }
-
-// ============================================================
-// INPUT COST
-// ============================================================
 
 function getRowInputCost(row) {
 
@@ -316,21 +316,13 @@ function getRowInputCost(row) {
         return 0;
     }
 
-    const value = Number(
+    return safeNumber(
         row.input_cost_usd ??
         row.input_cost ??
         0
     );
 
-    return Number.isFinite(value)
-        ? value
-        : 0;
-
 }
-
-// ============================================================
-// OUTPUT COST
-// ============================================================
 
 function getRowOutputCost(row) {
 
@@ -338,43 +330,26 @@ function getRowOutputCost(row) {
         return 0;
     }
 
-    const value = Number(
+    return safeNumber(
         row.output_cost_usd ??
         row.output_cost ??
         0
     );
 
-    return Number.isFinite(value)
-        ? value
-        : 0;
-
 }
 
 // ============================================================
-// BASE COST FOR ROW
-// ============================================================
-
-// Always represents the real cost stored by the backend.
-
-function getBaseRowCost(row) {
-
-    return getRowCost(row);
-
-}
-
-// ============================================================
-// DISPLAYED COST FOR ROW
+// DISPLAYED COST
 // ============================================================
 
 function getDisplayedRowCost(row) {
 
-    const baseCost = getBaseRowCost(row);
+    const baseCost =
+        getRowCost(row);
 
-    if (!demoMode) {
-        return baseCost;
-    }
-
-    return baseCost * demoCostMultiplier;
+    return demoMode
+        ? baseCost * demoCostMultiplier
+        : baseCost;
 
 }
 
@@ -382,25 +357,22 @@ function getDisplayedRowCost(row) {
 // TOTAL COST
 // ============================================================
 
-function calculateTotalUsdCost(products) {
+function calculateTotalUsdCost(rows) {
 
-    if (!Array.isArray(products)) {
+    if (!Array.isArray(rows)) {
         return 0;
     }
 
-    return products.reduce(
-        (total, row) => {
-
-            return total + getBaseRowCost(row);
-
-        },
+    return rows.reduce(
+        (total, row) =>
+            total + getRowCost(row),
         0
     );
 
 }
 
 // ============================================================
-// NORMALIZE AI PRODUCT
+// NORMALIZE PRODUCT
 // ============================================================
 
 function normalizeAIProduct(row) {
@@ -409,24 +381,55 @@ function normalizeAIProduct(row) {
         return null;
     }
 
-    const product = String(
+    const rawProduct = String(
         row.product ??
         row.ai_product ??
+        row.aiProduct ??
         ''
-    ).toLowerCase().trim();
+    )
+        .toLowerCase()
+        .trim();
 
-    const provider = String(
+    const rawProvider = String(
         row.provider ??
         ''
-    ).toLowerCase().trim();
+    )
+        .toLowerCase()
+        .trim();
 
-    // Product is already valid.
+    // Direct product match
 
-    if (AI_PRODUCTS[product]) {
-        return product;
+    if (AI_PRODUCTS[rawProduct]) {
+        return rawProduct;
     }
 
-    // Provider -> product.
+    // Product aliases
+
+    const productAliases = {
+
+        'chat-gpt': 'chatgpt',
+        'chat_gpt': 'chatgpt',
+        'openai-chatgpt': 'chatgpt',
+
+        'google-gemini': 'gemini',
+
+        'anthropic-claude': 'claude',
+
+        'microsoft-copilot': 'copilot',
+
+        'perplexity-ai': 'perplexity',
+
+        'openrouter-qwen': 'qwen',
+
+        'alibaba-qwen': 'qwen'
+
+    };
+
+    if (productAliases[rawProduct]) {
+        return productAliases[rawProduct];
+    }
+
+    // Provider fallback
 
     const providerToProduct = {
 
@@ -442,183 +445,13 @@ function normalizeAIProduct(row) {
 
         alibaba: 'qwen',
 
+        qwen: 'qwen',
+
         openrouter: 'qwen'
 
     };
 
-    return providerToProduct[provider] || null;
-
-}
-
-// ============================================================
-// COST BREAKDOWN BY AI
-// ============================================================
-
-function calculateCostBreakdown(products) {
-
-    const breakdown = {};
-
-    // --------------------------------------------------------
-    // INITIALISE ALL CONFIGURED AI PRODUCTS
-    // --------------------------------------------------------
-
-    Object.keys(AI_PRODUCTS).forEach(product => {
-
-        breakdown[product] = {
-
-            product: product,
-
-            name:
-                AI_PRODUCTS[product].name,
-
-            provider:
-                AI_PRODUCTS[product].provider,
-
-            color:
-                AI_PRODUCTS[product].color,
-
-            usd: 0,
-
-            baseUsd: 0,
-
-            myr: 0,
-
-            interactions: 0,
-
-            promptTokens: 0,
-
-            responseTokens: 0,
-
-            totalTokens: 0
-
-        };
-
-    });
-
-    // --------------------------------------------------------
-    // PROCESS API ROWS
-    // --------------------------------------------------------
-
-    if (!Array.isArray(products)) {
-        return breakdown;
-    }
-
-    products.forEach(row => {
-
-        const product =
-            normalizeAIProduct(row);
-
-        if (
-            !product ||
-            !breakdown[product]
-        ) {
-
-            console.warn(
-                '[ai-obs] COST BREAKDOWN: unknown product',
-                row
-            );
-
-            return;
-        }
-
-        const promptTokens =
-            getPromptTokens(row);
-
-        const responseTokens =
-            getResponseTokens(row);
-
-        const totalTokens =
-            getTokenValue(row);
-
-        // ----------------------------------------------------
-        // ACTUAL OPENROUTER COST
-        // ----------------------------------------------------
-
-        const baseCost =
-            getBaseRowCost(row);
-
-        // ----------------------------------------------------
-        // DISPLAY COST
-        // ----------------------------------------------------
-
-        const cost =
-            demoMode
-                ? baseCost * demoCostMultiplier
-                : baseCost;
-
-        breakdown[product].usd += cost;
-
-        breakdown[product].baseUsd +=
-            baseCost;
-
-        breakdown[product].promptTokens +=
-            promptTokens;
-
-        breakdown[product].responseTokens +=
-            responseTokens;
-
-        breakdown[product].totalTokens +=
-            totalTokens;
-
-        breakdown[product].interactions +=
-            Number(row.interactions) || 0;
-
-    });
-
-    // --------------------------------------------------------
-    // USD -> MYR
-    // --------------------------------------------------------
-
-    Object.values(breakdown).forEach(item => {
-
-        if (
-            currentBnmRate !== null &&
-            Number.isFinite(currentBnmRate)
-        ) {
-
-            item.myr =
-                item.usd *
-                currentBnmRate;
-
-        }
-
-    });
-
-    return breakdown;
-
-}
-
-// ============================================================
-// GET PRODUCT COLOUR
-// ============================================================
-
-function getProductColor(product) {
-
-    if (!product) {
-        return DEFAULT_CHART_COLOR;
-    }
-
-    const key =
-        String(product).toLowerCase();
-
-    if (AI_PRODUCTS[key]) {
-        return AI_PRODUCTS[key].color;
-    }
-
-    return DEFAULT_CHART_COLOR;
-
-}
-
-// ============================================================
-// GET PRODUCT COLOURS
-// ============================================================
-
-function getProductColors(products) {
-
-    return products.map(
-        product =>
-            getProductColor(product)
-    );
+    return providerToProduct[rawProvider] || null;
 
 }
 
@@ -633,22 +466,16 @@ function formatProductName(product) {
     }
 
     const key =
-        String(product).toLowerCase();
+        String(product)
+            .toLowerCase()
+            .trim();
 
     if (AI_PRODUCTS[key]) {
-
         return AI_PRODUCTS[key].name;
-
     }
 
-    return (
-        String(product)
-            .charAt(0)
-            .toUpperCase()
-        +
-        String(product)
-            .slice(1)
-    );
+    return key.charAt(0).toUpperCase() +
+        key.slice(1);
 
 }
 
@@ -681,75 +508,215 @@ function formatProviderName(provider) {
 
         alibaba: 'Alibaba',
 
+        qwen: 'Qwen',
+
         openrouter: 'OpenRouter'
 
     };
 
-    return (
-        providerNames[key] ||
-        formatProductName(key)
-    );
+    return providerNames[key] ||
+        formatProductName(key);
 
 }
 
 // ============================================================
-// LOAD BNM EXCHANGE RATE
+// PRODUCT COLOUR
+// ============================================================
+
+function getProductColor(product) {
+
+    const key =
+        String(product || '')
+            .toLowerCase()
+            .trim();
+
+    return AI_PRODUCTS[key]?.color ||
+        DEFAULT_CHART_COLOR;
+
+}
+
+// ============================================================
+// COST BREAKDOWN
+// ============================================================
+
+function calculateCostBreakdown(rows) {
+
+    const breakdown = {};
+
+    Object.keys(AI_PRODUCTS).forEach(product => {
+
+        breakdown[product] = {
+
+            product,
+
+            name:
+                AI_PRODUCTS[product].name,
+
+            provider:
+                AI_PRODUCTS[product].provider,
+
+            color:
+                AI_PRODUCTS[product].color,
+
+            usd: 0,
+
+            baseUsd: 0,
+
+            myr: 0,
+
+            interactions: 0,
+
+            promptTokens: 0,
+
+            responseTokens: 0,
+
+            totalTokens: 0
+
+        };
+
+    });
+
+    if (!Array.isArray(rows)) {
+        return breakdown;
+    }
+
+    rows.forEach(row => {
+
+        const product =
+            normalizeAIProduct(row);
+
+        if (!product) {
+
+            console.warn(
+                '[ai-obs] Unknown AI product:',
+                row
+            );
+
+            return;
+
+        }
+
+        const baseCost =
+            getRowCost(row);
+
+        const displayedCost =
+            getDisplayedRowCost(row);
+
+        breakdown[product].baseUsd +=
+            baseCost;
+
+        breakdown[product].usd +=
+            displayedCost;
+
+        breakdown[product].interactions +=
+            getInteractionValue(row);
+
+        breakdown[product].promptTokens +=
+            getPromptTokens(row);
+
+        breakdown[product].responseTokens +=
+            getResponseTokens(row);
+
+        breakdown[product].totalTokens +=
+            getTokenValue(row);
+
+    });
+
+    Object.values(breakdown).forEach(item => {
+
+        if (
+            currentBnmRate !== null &&
+            Number.isFinite(currentBnmRate)
+        ) {
+
+            item.myr =
+                item.usd *
+                currentBnmRate;
+
+        }
+
+    });
+
+    return breakdown;
+
+}
+
+// ============================================================
+// BNM EXCHANGE RATE
+//
+// This is the single source of truth for the USD -> MYR rate.
+// It fetches the rate, stores it in currentBnmRate/currentBnmDate,
+// and refreshes every element that depends on it (rate KPI +
+// cost-in-MYR figures). Nothing else in this app should fetch
+// /api/exchange-rate directly.
 // ============================================================
 
 async function loadBnmExchangeRate() {
-
     try {
+        const response = await fetch(
+            "/api/exchange-rate",
+            {
+                cache: "no-store"
+            }
+        );
 
-        const response =
-            await fetch(
-                '/api/exchange-rate/usd-myr'
-            );
+        const data = await response.json();
 
-        if (!response.ok) {
-
+        if (!response.ok || !data.success) {
             throw new Error(
-                'BNM exchange-rate request failed'
+                data.error ||
+                `BNM request failed (${response.status})`
             );
-
         }
 
-        const data =
-            await response.json();
+        /*
+         * Support both:
+         *
+         * data.rate
+         * data.middle_rate
+         */
+        const rate = Number(
+            data.rate ??
+            data.middle_rate
+        );
 
         if (
-            data.success &&
-            Number(data.middle_rate) > 0
+            !Number.isFinite(rate) ||
+            rate <= 0
         ) {
-
-            currentBnmRate =
-                Number(data.middle_rate);
-
-            updateExchangeRateDisplay();
-
-            return currentBnmRate;
-
+            throw new Error(
+                "Invalid USD/MYR exchange rate"
+            );
         }
 
-        throw new Error(
-            'Invalid BNM exchange-rate response'
+        currentBnmRate = rate;
+        currentBnmDate = data.date ?? null;
+
+        console.log(
+            `[dashboard] BNM USD/MYR: ${currentBnmRate}`
         );
 
     } catch (error) {
 
         console.error(
-            'BNM rate error:',
+            "[dashboard] BNM rate error:",
             error
         );
 
         currentBnmRate = null;
-
-        updateExchangeRateDisplay();
-
-        return null;
-
+        currentBnmDate = null;
     }
 
+    updateExchangeRateDisplay();
+
+    // The MYR cost figures depend on currentBnmRate, so refresh
+    // them any time the rate changes (e.g. on the 15-minute timer),
+    // not just right after loadDashboard() runs.
+    updateCostDisplay(window.__lastCostRows || []);
+
+    return currentBnmRate;
 }
+
 
 // ============================================================
 // EXCHANGE RATE DISPLAY
@@ -759,149 +726,108 @@ function updateExchangeRateDisplay() {
 
     const rateElement =
         document.getElementById(
-            'exchangeRate'
+            'usdMyrRate'
         );
 
-    if (!rateElement) {
-        return;
-    }
+    const descriptionElement =
+        document.getElementById(
+            'usdMyrDescription'
+        );
 
-    if (
+    const hasRate =
         currentBnmRate !== null &&
-        Number.isFinite(currentBnmRate)
-    ) {
+        Number.isFinite(currentBnmRate);
+
+    if (rateElement) {
 
         rateElement.textContent =
-            `1 USD = RM${currentBnmRate.toFixed(4)}`;
-
-        return;
+            hasRate
+                ? formatMyr(currentBnmRate)
+                : 'Unavailable';
 
     }
 
-    rateElement.textContent =
-        'BNM rate unavailable';
+    if (descriptionElement) {
+
+        descriptionElement.textContent =
+            hasRate
+                ? (
+                    currentBnmDate
+                        ? `1 USD = ${formatMyr(currentBnmRate)} • BNM • ${currentBnmDate}`
+                        : `1 USD = ${formatMyr(currentBnmRate)} • BNM`
+                )
+                : 'BNM exchange rate unavailable';
+
+    }
 
 }
 
 // ============================================================
-// UPDATE COST
+// COST DISPLAY (USD + MYR)
 // ============================================================
 
-function updateCostDisplay(products) {
+function updateCostDisplay(rows) {
 
-    // Actual OpenRouter cost.
+    // Remember the rows so the BNM refresh timer can recompute
+    // the MYR figure without needing a fresh /api/usage call.
+    window.__lastCostRows = rows;
 
-    const actualUsdCost =
-        calculateTotalUsdCost(products);
+    const actualUsd =
+        calculateTotalUsdCost(rows);
 
-    // Displayed cost.
-
-    const displayedUsdCost =
+    const displayedUsd =
         demoMode
-            ? actualUsdCost *
-              demoCostMultiplier
-            : actualUsdCost;
+            ? actualUsd * demoCostMultiplier
+            : actualUsd;
 
-    // USD -> MYR.
+    const hasRate =
+        currentBnmRate !== null &&
+        Number.isFinite(currentBnmRate);
 
-    const myrCost =
-        currentBnmRate !== null
-            ? displayedUsdCost *
-              currentBnmRate
+    const myr =
+        hasRate
+            ? displayedUsd * currentBnmRate
             : null;
-
-    // --------------------------------------------------------
-    // USD
-    // --------------------------------------------------------
 
     const usdElement =
         document.getElementById(
-            'estimatedCostUsd'
+            'totalCost'
         );
 
     if (usdElement) {
 
         usdElement.textContent =
-            formatUsd(
-                displayedUsdCost
-            );
+            formatPreciseUsd(displayedUsd);
 
     }
 
-    // --------------------------------------------------------
-    // MYR
-    // --------------------------------------------------------
-
     const myrElement =
         document.getElementById(
-            'estimatedCostMyr'
+            'totalCostMyr'
         );
 
     if (myrElement) {
 
         myrElement.textContent =
-            myrCost !== null
-                ? formatMyr(myrCost)
-                : 'N/A';
+            hasRate
+                ? formatMyr(myr)
+                : 'Unavailable';
 
     }
 
-    // --------------------------------------------------------
-    // LEGACY COST ELEMENT
-    // --------------------------------------------------------
-
-    const oldCostElement =
+    const myrDescriptionElement =
         document.getElementById(
-            'estimatedCost'
+            'totalCostMyrDescription'
         );
 
-    if (oldCostElement) {
+    if (myrDescriptionElement) {
 
-        oldCostElement.textContent =
-            myrCost !== null
-                ? formatMyr(myrCost)
-                : formatUsd(
-                    displayedUsdCost
-                );
+        myrDescriptionElement.textContent =
+            hasRate
+                ? `${formatPreciseUsd(displayedUsd)} × ${currentBnmRate.toFixed(4)}`
+                : 'Currency conversion unavailable';
 
     }
-
-    // --------------------------------------------------------
-    // COST LABEL
-    // --------------------------------------------------------
-
-    const costLabel =
-        document.getElementById(
-            'costLabel'
-        );
-
-    if (costLabel) {
-
-        costLabel.textContent =
-            demoMode
-                ? 'Demo Cost'
-                : 'Actual OpenRouter Cost';
-
-    }
-
-    return {
-
-        actualUsd:
-            actualUsdCost,
-
-        displayedUsd:
-            displayedUsdCost,
-
-        myr:
-            myrCost,
-
-        demoMode:
-            demoMode,
-
-        multiplier:
-            demoCostMultiplier
-
-    };
 
 }
 
@@ -909,64 +835,36 @@ function updateCostDisplay(products) {
 // COST BY AI PLATFORM
 // ============================================================
 
-function updateProviderCostChart(products) {
+function updateProviderCostChart(rows) {
 
     const canvas =
         document.getElementById(
             'providerCostChart'
         );
 
-    if (!canvas) {
-
-        console.error(
-            '[dashboard] providerCostChart canvas not found'
-        );
-
+    if (!canvas || !Array.isArray(rows)) {
         return;
-
-    }
-
-    if (!Array.isArray(products)) {
-
-        console.warn(
-            '[dashboard] Invalid products data for cost chart'
-        );
-
-        return;
-
     }
 
     const breakdown =
-        calculateCostBreakdown(products);
+        calculateCostBreakdown(rows);
 
     const items =
-        Object.values(breakdown).filter(
-            item =>
+        Object.values(breakdown)
+            .filter(item =>
                 item.usd > 0 ||
-                item.promptTokens > 0 ||
-                item.responseTokens > 0 ||
-                item.interactions > 0
-        );
+                item.interactions > 0 ||
+                item.totalTokens > 0
+            );
 
     const labels =
-        items.map(
-            item => item.name
-        );
+        items.map(item => item.name);
 
     const costs =
-        items.map(
-            item =>
-                Number(item.usd) || 0
-        );
+        items.map(item => item.usd);
 
     const colors =
-        items.map(
-            item => item.color
-        );
-
-    // --------------------------------------------------------
-    // CREATE CHART
-    // --------------------------------------------------------
+        items.map(item => item.color);
 
     if (!providerCostChart) {
 
@@ -979,30 +877,24 @@ function updateProviderCostChart(products) {
 
                     data: {
 
-                        labels: labels,
+                        labels,
 
-                        datasets: [
+                        datasets: [{
 
-                            {
+                            label:
+                                demoMode
+                                    ? 'Demo Cost (USD)'
+                                    : 'Actual OpenRouter Cost (USD)',
 
-                                label:
-                                    demoMode
-                                        ? 'Demo Cost (USD)'
-                                        : 'Actual OpenRouter Cost (USD)',
+                            data: costs,
 
-                                data: costs,
+                            backgroundColor: colors,
 
-                                backgroundColor:
-                                    colors,
+                            borderColor: colors,
 
-                                borderColor:
-                                    colors,
+                            borderWidth: 1
 
-                                borderWidth: 1
-
-                            }
-
-                        ]
+                        }]
 
                     },
 
@@ -1012,31 +904,27 @@ function updateProviderCostChart(products) {
 
                         maintainAspectRatio: false,
 
+                        animation: false,
+
                         plugins: {
 
                             legend: {
-
                                 display: false
-
                             },
 
                             tooltip: {
 
                                 callbacks: {
 
-                                    label:
-                                        function(context) {
-
-                                            return (
-                                                demoMode
-                                                    ? 'Demo Cost: '
-                                                    : 'Actual Cost: '
-                                            ) +
-                                            formatPreciseUsd(
-                                                context.raw
-                                            );
-
-                                        }
+                                    label: context =>
+                                        (
+                                            demoMode
+                                                ? 'Demo Cost: '
+                                                : 'Actual Cost: '
+                                        ) +
+                                        formatPreciseUsd(
+                                            context.raw
+                                        )
 
                                 }
 
@@ -1052,14 +940,10 @@ function updateProviderCostChart(products) {
 
                                 ticks: {
 
-                                    callback:
-                                        function(value) {
-
-                                            return '$' +
-                                                Number(value)
-                                                    .toFixed(4);
-
-                                        }
+                                    callback: value =>
+                                        '$' +
+                                        Number(value)
+                                            .toFixed(4)
 
                                 }
 
@@ -1075,10 +959,6 @@ function updateProviderCostChart(products) {
         return;
 
     }
-
-    // --------------------------------------------------------
-    // UPDATE EXISTING CHART
-    // --------------------------------------------------------
 
     providerCostChart.data.labels =
         labels;
@@ -1105,127 +985,67 @@ function updateProviderCostChart(products) {
 // INPUT VS OUTPUT COST
 // ============================================================
 
-function updateCostTypeChart(products) {
+function updateCostTypeChart(rows) {
 
     const canvas =
         document.getElementById(
             'costTypeChart'
         );
 
-    if (!canvas) {
-
-        console.error(
-            '[dashboard] costTypeChart canvas not found'
-        );
-
+    if (!canvas || !Array.isArray(rows)) {
         return;
-
-    }
-
-    if (!Array.isArray(products)) {
-
-        console.warn(
-            '[dashboard] Invalid products data for cost type chart'
-        );
-
-        return;
-
     }
 
     let inputCost = 0;
-
     let outputCost = 0;
 
-    let hasSeparateCostData = false;
+    let hasSeparateCosts = false;
 
-    products.forEach(row => {
-
-        const rowInput =
-            Number(row.input_cost_usd);
-
-        const rowOutput =
-            Number(row.output_cost_usd);
-
-        // Only treat the values as separate cost data
-        // if the backend actually supplied them.
+    rows.forEach(row => {
 
         if (
             row.input_cost_usd !== undefined ||
             row.output_cost_usd !== undefined
         ) {
 
-            if (Number.isFinite(rowInput)) {
+            hasSeparateCosts = true;
 
-                inputCost += rowInput;
+            inputCost +=
+                getRowInputCost(row);
 
-            }
-
-            if (Number.isFinite(rowOutput)) {
-
-                outputCost += rowOutput;
-
-            }
-
-            hasSeparateCostData = true;
+            outputCost +=
+                getRowOutputCost(row);
 
         }
 
     });
 
     let labels;
-
     let data;
 
-    // --------------------------------------------------------
-    // SEPARATE INPUT / OUTPUT COSTS
-    // --------------------------------------------------------
-
-    if (hasSeparateCostData) {
+    if (hasSeparateCosts) {
 
         labels = [
-
             'Input Cost',
-
             'Output Cost'
-
         ];
 
         data = [
-
             inputCost,
-
             outputCost
-
         ];
 
-    }
-
-    // --------------------------------------------------------
-    // FALLBACK TO TOTAL COST
-    // --------------------------------------------------------
-
-    else {
-
-        const totalCost =
-            calculateTotalUsdCost(products);
+    } else {
 
         labels = [
-
             'Total Cost'
-
         ];
 
         data = [
-
-            totalCost
-
+            calculateTotalUsdCost(rows)
         ];
 
     }
-
-    // --------------------------------------------------------
-    // DEMO MODE
-    // --------------------------------------------------------
 
     if (demoMode) {
 
@@ -1238,10 +1058,6 @@ function updateCostTypeChart(products) {
 
     }
 
-    // --------------------------------------------------------
-    // CREATE CHART
-    // --------------------------------------------------------
-
     if (!costTypeChart) {
 
         costTypeChart =
@@ -1253,19 +1069,15 @@ function updateCostTypeChart(products) {
 
                     data: {
 
-                        labels: labels,
+                        labels,
 
-                        datasets: [
+                        datasets: [{
 
-                            {
+                            data,
 
-                                data: data,
+                            borderWidth: 1
 
-                                borderWidth: 1
-
-                            }
-
-                        ]
+                        }]
 
                     },
 
@@ -1278,27 +1090,18 @@ function updateCostTypeChart(products) {
                         plugins: {
 
                             legend: {
-
                                 display: true
-
                             },
 
                             tooltip: {
 
                                 callbacks: {
 
-                                    label:
-                                        function(context) {
-
-                                            return (
-                                                context.label +
-                                                ': ' +
-                                                formatPreciseUsd(
-                                                    context.raw
-                                                )
-                                            );
-
-                                        }
+                                    label: context =>
+                                        `${context.label}: ` +
+                                        formatPreciseUsd(
+                                            context.raw
+                                        )
 
                                 }
 
@@ -1315,10 +1118,6 @@ function updateCostTypeChart(products) {
 
     }
 
-    // --------------------------------------------------------
-    // UPDATE EXISTING CHART
-    // --------------------------------------------------------
-
     costTypeChart.data.labels =
         labels;
 
@@ -1333,7 +1132,7 @@ function updateCostTypeChart(products) {
 // COST BREAKDOWN TABLE
 // ============================================================
 
-function updateCostBreakdown(products) {
+function updateCostBreakdown(rows) {
 
     const table =
         document.getElementById(
@@ -1345,17 +1144,15 @@ function updateCostBreakdown(products) {
     }
 
     const breakdown =
-        calculateCostBreakdown(
-            products
-        );
+        calculateCostBreakdown(rows);
 
     const items =
-        Object.values(breakdown).filter(
-            item =>
+        Object.values(breakdown)
+            .filter(item =>
                 item.usd > 0 ||
                 item.interactions > 0 ||
                 item.totalTokens > 0
-        );
+            );
 
     const totalUsd =
         items.reduce(
@@ -1364,20 +1161,34 @@ function updateCostBreakdown(products) {
             0
         );
 
-    let html = '';
+    if (items.length === 0) {
 
-    // --------------------------------------------------------
-    // TABLE ROWS
-    // --------------------------------------------------------
+        table.innerHTML = `
+
+            <tr>
+
+                <td
+                    colspan="6"
+                    style="text-align:center;"
+                >
+                    No cost data available
+                </td>
+
+            </tr>
+
+        `;
+
+        return;
+
+    }
+
+    let html = '';
 
     items.forEach(item => {
 
         const percentage =
             totalUsd > 0
-                ? (
-                    item.usd /
-                    totalUsd
-                ) * 100
+                ? item.usd / totalUsd * 100
                 : 0;
 
         html += `
@@ -1423,7 +1234,6 @@ function updateCostBreakdown(products) {
                 </td>
 
                 <td>
-
                     ${
                         currentBnmRate !== null
                             ? formatMyr(
@@ -1432,7 +1242,6 @@ function updateCostBreakdown(products) {
                             )
                             : 'N/A'
                     }
-
                 </td>
 
                 <td>
@@ -1445,210 +1254,187 @@ function updateCostBreakdown(products) {
 
     });
 
-    // --------------------------------------------------------
-    // EMPTY STATE
-    // --------------------------------------------------------
+    const totalInteractions =
+        items.reduce(
+            (sum, item) =>
+                sum + item.interactions,
+            0
+        );
 
-    if (items.length === 0) {
+    const totalTokens =
+        items.reduce(
+            (sum, item) =>
+                sum + item.totalTokens,
+            0
+        );
 
-        html = `
+    html += `
 
-            <tr>
+        <tr>
 
-                <td
-                    colspan="6"
-                    style="text-align:center;"
-                >
+            <td>
+                <strong>Total</strong>
+            </td>
 
-                    No cost data available
+            <td>
+                ${formatNumber(
+                    totalInteractions
+                )}
+            </td>
 
-                </td>
+            <td>
+                ${formatNumber(
+                    totalTokens
+                )}
+            </td>
 
-            </tr>
-
-        `;
-
-    }
-
-    // --------------------------------------------------------
-    // TOTAL
-    // --------------------------------------------------------
-
-    else {
-
-        const totalInteractions =
-            items.reduce(
-                (sum, item) =>
-                    sum +
-                    item.interactions,
-                0
-            );
-
-        const totalTokens =
-            items.reduce(
-                (sum, item) =>
-                    sum +
-                    item.totalTokens,
-                0
-            );
-
-        html += `
-
-            <tr>
-
-                <td>
-
-                    <strong>
-                        Total
-                    </strong>
-
-                </td>
-
-                <td>
-
-                    ${formatNumber(
-                        totalInteractions
+            <td>
+                <strong>
+                    ${formatPreciseUsd(
+                        totalUsd
                     )}
+                </strong>
+            </td>
 
-                </td>
+            <td>
 
-                <td>
+                <strong>
 
-                    ${formatNumber(
-                        totalTokens
-                    )}
+                    ${
+                        currentBnmRate !== null
+                            ? formatMyr(
+                                totalUsd *
+                                currentBnmRate
+                            )
+                            : 'N/A'
+                    }
 
-                </td>
+                </strong>
 
-                <td>
+            </td>
 
-                    <strong>
-                        ${formatPreciseUsd(
-                            totalUsd
-                        )}
-                    </strong>
+            <td>
+                <strong>100%</strong>
+            </td>
 
-                </td>
+        </tr>
 
-                <td>
+    `;
 
-                    <strong>
-
-                        ${
-                            currentBnmRate !== null
-                                ? formatMyr(
-                                    totalUsd *
-                                    currentBnmRate
-                                )
-                                : 'N/A'
-                        }
-
-                    </strong>
-
-                </td>
-
-                <td>
-
-                    <strong>
-                        100%
-                    </strong>
-
-                </td>
-
-            </tr>
-
-        `;
-
-    }
-
-    table.innerHTML =
-        html;
+    table.innerHTML = html;
 
 }
 
+// ============================================================
+// RECENT ACTIVITY
+// ============================================================
 
 function updateRecentActivity(activity) {
 
     const table =
-        document.getElementById('recentActivityTable');
+        document.getElementById(
+            'recentActivityTable'
+        );
 
     if (!table) {
         return;
     }
 
-    table.innerHTML = '';
-
-    if (!Array.isArray(activity) || activity.length === 0) {
+    if (
+        !Array.isArray(activity) ||
+        activity.length === 0
+    ) {
 
         table.innerHTML = `
+
             <tr>
-                <td colspan="7" style="text-align:center;">
+
+                <td
+                    colspan="7"
+                    style="text-align:center;"
+                >
                     No recent AI activity
                 </td>
+
             </tr>
+
         `;
 
         return;
+
     }
 
+    table.innerHTML = '';
+
     activity.forEach(row => {
-    const tr =
-        document.createElement('tr');
 
-    const date =
-        row.occurred_at
-            ? new Date(row.occurred_at)
-                .toLocaleString()
-            : '-';
+        const tr =
+            document.createElement('tr');
 
-    const provider =
-        formatProviderName(
-            row.provider
-        );
+        const date =
+            row.occurred_at
+                ? new Date(
+                    row.occurred_at
+                ).toLocaleString()
+                : '-';
 
-    const tokens =
-        Number(row.total_tokens) || 0;
+        const provider =
+            formatProviderName(
+                row.provider
+            );
 
-    const cost =
-        Number(row.total_cost_usd) || 0;
+        const tokens =
+            getTokenValue(row);
 
-    tr.innerHTML = `
-        <td>
-            ${row.email || '-'}
-        </td>
+        const cost =
+            getDisplayedRowCost(row);
 
-        <td>
-            ${provider}
-        </td>
+        tr.innerHTML = `
 
-        <td>
-            ${row.model || '-'}
-        </td>
+            <td>
+                ${row.email || '-'}
+            </td>
 
-        <td>
-            ${row.latency_ms || '-'}
-        </td>
+            <td>
+                ${provider}
+            </td>
 
-        <td>
-            ${formatNumber(tokens)}
-        </td>
+            <td>
+                ${row.model || '-'}
+            </td>
 
-        <td>
-            ${formatPreciseUsd(cost)}
-        </td>
+            <td>
+                ${
+                    row.latency_ms != null
+                        ? `${safeNumber(
+                            row.latency_ms
+                        ).toFixed(0)} ms`
+                        : '-'
+                }
+            </td>
 
-        <td>
-            ${date}
-        </td>
-    `;
+            <td>
+                ${formatNumber(tokens)}
+            </td>
 
-    table.appendChild(tr);
-});
+            <td>
+                ${formatPreciseUsd(cost)}
+            </td>
+
+            <td>
+                ${date}
+            </td>
+
+        `;
+
+        table.appendChild(tr);
+
+    });
 
 }
 
 // ============================================================
-// DEMO MODE CONTROLS
+// DEMO MODE
 // ============================================================
 
 function initializeDemoMode() {
@@ -1663,19 +1449,10 @@ function initializeDemoMode() {
             'demoCostMultiplier'
         );
 
-    if (!toggle) {
-        return;
-    }
-
-    toggle.checked =
-        demoMode;
-
     if (multiplier) {
 
         multiplier.value =
-            String(
-                demoCostMultiplier
-            );
+            String(demoCostMultiplier);
 
         multiplier.addEventListener(
             'change',
@@ -1699,6 +1476,13 @@ function initializeDemoMode() {
 
     }
 
+    if (!toggle) {
+        return;
+    }
+
+    toggle.checked =
+        demoMode;
+
     toggle.addEventListener(
         'change',
         () => {
@@ -1714,347 +1498,7 @@ function initializeDemoMode() {
 }
 
 // ============================================================
-// LOAD DASHBOARD
-// ============================================================
-
-async function loadDashboard() {
-
-    try {
-
-        const [
-            summaryResponse,
-            employeeResponse,
-            providerResponse,
-            productResponse,
-            employeeProductResponse,
-            recentResponse
-        ] = await Promise.all([
-
-            fetch(
-                '/api/usage/summary'
-            ),
-
-            fetch(
-                '/api/usage/by-employee'
-            ),
-
-            fetch(
-                '/api/usage/by-provider'
-            ),
-
-            fetch(
-                '/api/usage/by-product'
-            ),
-
-            fetch(
-                '/api/usage/by-employee-product'
-            ),
-
-            fetch(
-                '/api/usage/recent'
-            )
-        ]);
-
-        if (
-            !summaryResponse.ok ||
-            !employeeResponse.ok ||
-            !providerResponse.ok ||
-            !productResponse.ok ||
-            !employeeProductResponse.ok ||
-            !recentResponse.ok
-        ) {
-            throw new Error(
-                'One or more API requests failed'
-            );
-        }
-
-        const summary =
-            await summaryResponse.json();
-
-        console.log("[dashboard] SUMMARY:", summary);
-
-        console.log(
-            "[dashboard] INTERACTIONS:",
-            summary.interactions
-        );
-
-        console.log(
-            "[dashboard] SESSIONS:",
-            summary.sessions
-        );
-
-        console.log(
-            "[dashboard] EMPLOYEES:",
-            summary.active_employees
-        );
-
-        console.log(
-            "[dashboard] TOKENS:",
-            summary.total_tokens
-        );
-
-
-        // ============================================================
-        // UPDATE KPI CARDS
-        // ============================================================
-
-        const interactionsElement =
-            document.getElementById("totalInteractions");
-
-        const sessionsElement =
-            document.getElementById("totalSessions");
-
-        const employeesElement =
-            document.getElementById("activeUsers");
-
-        const latencyElement =
-            document.getElementById("averageLatency");
-
-        const tokensElement =
-            document.getElementById("totalTokens");
-
-        const costElement =
-            document.getElementById("totalCost");
-
-
-        if (interactionsElement) {
-            interactionsElement.textContent =
-                Number(summary.interactions || 0).toLocaleString();
-        }
-
-        if (sessionsElement) {
-            sessionsElement.textContent =
-                Number(summary.sessions || 0).toLocaleString();
-        }
-
-        if (employeesElement) {
-            employeesElement.textContent =
-                Number(summary.active_employees || 0).toLocaleString();
-        }
-
-        if (latencyElement) {
-            latencyElement.textContent =
-                `${Math.round(
-                    Number(summary.avg_latency_ms || 0)
-                )} ms`;
-        }
-
-        if (tokensElement) {
-            tokensElement.textContent =
-                Number(summary.total_tokens || 0).toLocaleString();
-        }
-
-        if (costElement) {
-            costElement.textContent =
-                `$${Number(
-                    summary.total_cost_usd || 0
-                ).toFixed(6)}`;
-        }
-
-        const employees =
-            await employeeResponse.json();
-
-        const providers =
-            await providerResponse.json();
-
-        const products =
-            await productResponse.json();
-
-        const employeeProducts =
-            await employeeProductResponse.json();
-
-        const recentActivity =
-            await recentResponse.json();
-
-        // ----------------------------------------------------
-        // UPDATE DASHBOARD
-        // ----------------------------------------------------
-
-        updateMetrics(
-            summary
-        );
-
-        updateCostDisplay(
-            products
-        );
-
-        updateCostBreakdown(
-            products
-        );
-
-        updateProviderCostChart(
-            products
-        );
-
-        updateCostTypeChart(
-            products
-        );
-
-        updateEmployeeCharts(
-            employees
-        );
-
-        updateProviderCharts(
-            providers
-        );
-
-        updateTokenChart(
-            providers
-        );
-
-        updateEmployeeProductChart(
-            employeeProducts
-        );
-
-        updateRecentActivity(
-            recentActivity
-        );
-
-        updateTable(
-            employees
-        );
-
-        updateAIStatus(
-            products
-        );
-
-        // ----------------------------------------------------
-        // LAST UPDATED
-        // ----------------------------------------------------
-
-        const lastUpdated =
-            document.getElementById(
-                'lastUpdated'
-            );
-
-        if (lastUpdated) {
-
-            lastUpdated.textContent =
-                new Date()
-                    .toLocaleTimeString();
-
-        }
-
-    } catch (error) {
-
-        console.error(
-            'Dashboard loading failed:',
-            error
-        );
-
-    }
-}
-
-// ============================================================
-// KPI METRICS
-// ============================================================
-
-function updateMetrics(summary) {
-
-    if (!summary) {
-        return;
-    }
-
-    // --------------------------------------------------------
-    // INTERACTIONS
-    // --------------------------------------------------------
-
-    const interactions =
-        document.getElementById(
-            'interactions'
-        );
-
-    if (interactions) {
-
-        interactions.textContent =
-            formatNumber(
-                summary.interactions
-            );
-
-    }
-
-    // --------------------------------------------------------
-    // SESSIONS
-    // --------------------------------------------------------
-
-    const sessions =
-        document.getElementById(
-            'sessions'
-        );
-
-    if (sessions) {
-
-        sessions.textContent =
-            formatNumber(
-                summary.sessions
-            );
-
-    }
-
-    // --------------------------------------------------------
-    // ACTIVE EMPLOYEES
-    // --------------------------------------------------------
-
-    const employees =
-        document.getElementById(
-            'employees'
-        );
-
-    if (employees) {
-
-        employees.textContent =
-            formatNumber(
-                summary.active_employees
-            );
-
-    }
-
-    // --------------------------------------------------------
-    // LATENCY
-    // --------------------------------------------------------
-
-    const latency =
-        document.getElementById(
-            'latency'
-        );
-
-    if (latency) {
-
-        latency.textContent =
-            summary.avg_latency_ms != null
-
-                ? `${Number(
-                    summary.avg_latency_ms
-                ).toFixed(0)} ms`
-
-                : 'N/A';
-
-    }
-
-    // --------------------------------------------------------
-    // TOKENS
-    // --------------------------------------------------------
-
-    const tokens =
-        document.getElementById(
-            'tokens'
-        );
-
-    if (tokens) {
-
-        tokens.textContent =
-            formatNumber(
-                getTokenValue(
-                    summary
-                )
-            );
-
-    }
-
-}
-
-// ============================================================
-// EMPLOYEE INTERACTIONS
+// EMPLOYEE INTERACTION CHART
 // ============================================================
 
 function updateEmployeeCharts(employees) {
@@ -2062,21 +1506,6 @@ function updateEmployeeCharts(employees) {
     if (!Array.isArray(employees)) {
         return;
     }
-
-    const labels =
-        employees.map(
-            employee =>
-                employee.email ||
-                'Unknown'
-        );
-
-    const interactions =
-        employees.map(
-            employee =>
-                Number(
-                    employee.interactions
-                ) || 0
-        );
 
     const canvas =
         document.getElementById(
@@ -2087,6 +1516,20 @@ function updateEmployeeCharts(employees) {
         return;
     }
 
+    const labels =
+        employees.map(
+            employee =>
+                employee.email ||
+                employee.employee_email ||
+                'Unknown'
+        );
+
+    const interactions =
+        employees.map(
+            employee =>
+                getInteractionValue(employee)
+        );
+
     if (employeeInteractionChart) {
 
         employeeInteractionChart.data.labels =
@@ -2095,9 +1538,7 @@ function updateEmployeeCharts(employees) {
         employeeInteractionChart.data.datasets[0].data =
             interactions;
 
-        employeeInteractionChart.update(
-            'none'
-        );
+        employeeInteractionChart.update('none');
 
         return;
 
@@ -2114,32 +1555,25 @@ function updateEmployeeCharts(employees) {
 
                     labels,
 
-                    datasets: [
+                    datasets: [{
 
-                        {
+                        label: 'Interactions',
 
-                            label:
-                                'Interactions',
+                        data: interactions,
 
-                            data:
-                                interactions,
+                        backgroundColor:
+                            '#6366F1',
 
-                            backgroundColor:
-                                '#6366F1',
+                        borderColor:
+                            '#6366F1',
 
-                            borderColor:
-                                '#6366F1',
+                        borderWidth: 1
 
-                            borderWidth: 1
-
-                        }
-
-                    ]
+                    }]
 
                 },
 
-                options:
-                    chartOptions
+                options: chartOptions
 
             }
         );
@@ -2156,146 +1590,77 @@ function updateProviderCharts(providers) {
         return;
     }
 
-    // --------------------------------------------------------
-    // PROVIDER NAMES
-    // --------------------------------------------------------
-
     const labels =
         providers.map(
-            provider =>
+            row =>
                 formatProviderName(
-                    provider.provider
+                    row.provider
                 )
         );
 
-    // --------------------------------------------------------
-    // INTERACTIONS
-    // --------------------------------------------------------
-
     const interactions =
         providers.map(
-            provider =>
-                Number(
-                    provider.interactions
-                ) || 0
+            row =>
+                getInteractionValue(row)
         );
-
-    // --------------------------------------------------------
-    // SESSIONS
-    // --------------------------------------------------------
 
     const sessions =
         providers.map(
-            provider =>
-                Number(
-                    provider.sessions
-                ) || 0
+            row =>
+                getSessionValue(row)
         );
-
-    // --------------------------------------------------------
-    // LATENCY
-    // --------------------------------------------------------
 
     const latency =
         providers.map(
-            provider =>
-                Number(
-                    provider.avg_latency_ms
-                ) || 0
+            row =>
+                safeNumber(
+                    row.avg_latency_ms ??
+                    row.average_latency_ms
+                )
         );
-
-    // --------------------------------------------------------
-    // TOKEN COUNT
-    // --------------------------------------------------------
-
-    const tokens =
-        providers.map(
-            provider => {
-
-                const total =
-                    Number(
-                        provider.total_tokens
-                    );
-
-                if (
-                    Number.isFinite(total) &&
-                    total > 0
-                ) {
-
-                    return total;
-
-                }
-
-                return (
-
-                    Number(
-                        provider.prompt_tokens
-                    ) || 0
-
-                ) + (
-
-                    Number(
-                        provider.response_tokens
-                    ) || 0
-
-                );
-
-            }
-        );
-
-    // --------------------------------------------------------
-    // PROVIDER COLOURS
-    // --------------------------------------------------------
 
     const colors =
         providers.map(
-            provider => {
+            row => {
 
-                const name =
+                const provider =
                     String(
-                        provider.provider || ''
-                    ).toLowerCase();
+                        row.provider || ''
+                    )
+                        .toLowerCase()
+                        .trim();
+
+                const product =
+                    normalizeAIProduct(row);
 
                 const providerColors = {
 
-                    google:
-                        '#4285F4',
+                    google: '#4285F4',
 
-                    openai:
-                        '#10A37F',
+                    openai: '#10A37F',
 
-                    anthropic:
-                        '#D97757',
+                    anthropic: '#D97757',
 
-                    microsoft:
-                        '#6366F1',
+                    microsoft: '#6366F1',
 
-                    perplexity:
-                        '#20B8CD',
+                    perplexity: '#20B8CD',
 
-                    alibaba:
-                        '#FF6A00',
+                    alibaba: '#FF6A00',
 
-                    qwen:
-                        '#FF6A00',
+                    qwen: '#FF6A00',
 
-                    openrouter:
-                        '#64748B'
+                    openrouter: '#64748B'
 
                 };
 
-                return (
-
-                    providerColors[name] ||
-                    DEFAULT_CHART_COLOR
-
-                );
+                return providerColors[provider] ||
+                    getProductColor(product);
 
             }
         );
 
     // ========================================================
-    // INTERACTION CHART
+    // PROVIDER INTERACTIONS
     // ========================================================
 
     const interactionCanvas =
@@ -2319,9 +1684,7 @@ function updateProviderCharts(providers) {
             providerInteractionChart.data.datasets[0].borderColor =
                 colors;
 
-            providerInteractionChart.update(
-                'none'
-            );
+            providerInteractionChart.update('none');
 
         } else {
 
@@ -2334,29 +1697,25 @@ function updateProviderCharts(providers) {
 
                         data: {
 
-                            labels: labels,
+                            labels,
 
-                            datasets: [
+                            datasets: [{
 
-                                {
+                                label:
+                                    'Interactions',
 
-                                    label:
-                                        'Interactions',
+                                data:
+                                    interactions,
 
-                                    data:
-                                        interactions,
+                                backgroundColor:
+                                    colors,
 
-                                    backgroundColor:
-                                        colors,
+                                borderColor:
+                                    colors,
 
-                                    borderColor:
-                                        colors,
+                                borderWidth: 1
 
-                                    borderWidth: 1
-
-                                }
-
-                            ]
+                            }]
 
                         },
 
@@ -2371,7 +1730,7 @@ function updateProviderCharts(providers) {
     }
 
     // ========================================================
-    // SESSION CHART
+    // PROVIDER SESSIONS
     // ========================================================
 
     const sessionCanvas =
@@ -2395,9 +1754,7 @@ function updateProviderCharts(providers) {
             providerSessionChart.data.datasets[0].borderColor =
                 colors;
 
-            providerSessionChart.update(
-                'none'
-            );
+            providerSessionChart.update('none');
 
         } else {
 
@@ -2410,29 +1767,25 @@ function updateProviderCharts(providers) {
 
                         data: {
 
-                            labels: labels,
+                            labels,
 
-                            datasets: [
+                            datasets: [{
 
-                                {
+                                label:
+                                    'Sessions',
 
-                                    label:
-                                        'Sessions',
+                                data:
+                                    sessions,
 
-                                    data:
-                                        sessions,
+                                backgroundColor:
+                                    colors,
 
-                                    backgroundColor:
-                                        colors,
+                                borderColor:
+                                    colors,
 
-                                    borderColor:
-                                        colors,
+                                borderWidth: 1
 
-                                    borderWidth: 1
-
-                                }
-
-                            ]
+                            }]
 
                         },
 
@@ -2447,7 +1800,7 @@ function updateProviderCharts(providers) {
     }
 
     // ========================================================
-    // LATENCY CHART
+    // PROVIDER LATENCY
     // ========================================================
 
     const latencyCanvas =
@@ -2465,15 +1818,7 @@ function updateProviderCharts(providers) {
             latencyChart.data.datasets[0].data =
                 latency;
 
-            latencyChart.data.datasets[0].backgroundColor =
-                colors;
-
-            latencyChart.data.datasets[0].borderColor =
-                colors;
-
-            latencyChart.update(
-                'none'
-            );
+            latencyChart.update('none');
 
         } else {
 
@@ -2482,38 +1827,99 @@ function updateProviderCharts(providers) {
                     latencyCanvas,
                     {
 
-                        type: 'bar',
+                        type: 'line',
 
                         data: {
 
-                            labels: labels,
+                            labels,
 
-                            datasets: [
+                            datasets: [{
 
-                                {
+                                label:
+                                    'Average Latency (ms)',
 
-                                    label:
-                                        'Average Latency (ms)',
+                                data:
+                                    latency,
 
-                                    data:
-                                        latency,
+                                borderWidth: 3,
 
-                                    backgroundColor:
-                                        colors,
+                                tension: 0.3,
 
-                                    borderColor:
-                                        colors,
+                                fill: false,
 
-                                    borderWidth: 1
+                                pointRadius: 5,
 
-                                }
+                                pointHoverRadius: 7
 
-                            ]
+                            }]
 
                         },
 
-                        options:
-                            chartOptions
+                        options: {
+
+                            responsive: true,
+
+                            maintainAspectRatio: false,
+
+                            animation: false,
+
+                            plugins: {
+
+                                legend: {
+                                    display: true
+                                },
+
+                                tooltip: {
+
+                                    callbacks: {
+
+                                        label:
+                                            context =>
+                                                'Latency: ' +
+                                                safeNumber(
+                                                    context.raw
+                                                ).toFixed(0) +
+                                                ' ms'
+
+                                    }
+
+                                }
+
+                            },
+
+                            scales: {
+
+                                y: {
+
+                                    beginAtZero: true,
+
+                                    title: {
+
+                                        display: true,
+
+                                        text:
+                                            'Latency (ms)'
+
+                                    }
+
+                                },
+
+                                x: {
+
+                                    title: {
+
+                                        display: true,
+
+                                        text:
+                                            'Provider'
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
 
                     }
                 );
@@ -2525,7 +1931,7 @@ function updateProviderCharts(providers) {
 }
 
 // ============================================================
-// TOKEN USAGE
+// TOKEN CHART
 // ============================================================
 
 function updateTokenChart(providers) {
@@ -2545,31 +1951,51 @@ function updateTokenChart(providers) {
 
     const labels =
         providers.map(
-            provider =>
+            row =>
                 formatProductName(
-                    provider.product ||
-                    provider.provider
+                    normalizeAIProduct(row) ||
+                    row.product ||
+                    row.provider
                 )
-        );
-
-    const products =
-        providers.map(
-            provider =>
-                provider.product ||
-                provider.provider
         );
 
     const tokens =
         providers.map(
-            provider =>
-                getTokenValue(
-                    provider
-                )
+            row => {
+
+                const total =
+                    Number(
+                        row.total_tokens
+                    );
+
+                if (
+                    Number.isFinite(total)
+                ) {
+
+                    return total;
+
+                }
+
+                return (
+                    getPromptTokens(row) +
+                    getResponseTokens(row)
+                );
+
+            }
+        );
+
+    const products =
+        providers.map(
+            row =>
+                normalizeAIProduct(row) ||
+                row.product ||
+                row.provider
         );
 
     const colors =
-        getProductColors(
-            products
+        products.map(
+            product =>
+                getProductColor(product)
         );
 
     if (providerTokenChart) {
@@ -2586,9 +2012,7 @@ function updateTokenChart(providers) {
         providerTokenChart.data.datasets[0].borderColor =
             colors;
 
-        providerTokenChart.update(
-            'none'
-        );
+        providerTokenChart.update('none');
 
         return;
 
@@ -2605,27 +2029,19 @@ function updateTokenChart(providers) {
 
                     labels,
 
-                    datasets: [
+                    datasets: [{
 
-                        {
+                        label: 'Tokens',
 
-                            label:
-                                'Tokens',
+                        data: tokens,
 
-                            data:
-                                tokens,
+                        backgroundColor: colors,
 
-                            backgroundColor:
-                                colors,
+                        borderColor: colors,
 
-                            borderColor:
-                                colors,
+                        borderWidth: 1
 
-                            borderWidth: 1
-
-                        }
-
-                    ]
+                    }]
 
                 },
 
@@ -2665,9 +2081,7 @@ function updateTokenChart(providers) {
 // EMPLOYEE × AI PRODUCT
 // ============================================================
 
-function updateEmployeeProductChart(
-    employeeProducts
-) {
+function updateEmployeeProductChart(employeeProducts) {
 
     if (!Array.isArray(employeeProducts)) {
         return;
@@ -2682,88 +2096,121 @@ function updateEmployeeProductChart(
         return;
     }
 
+    // --------------------------------------------------------
+    // NORMALISE DATA FIRST
+    // --------------------------------------------------------
+
+    const normalizedRows =
+        employeeProducts
+            .map(row => {
+
+                const email =
+                    String(
+                        row.email ??
+                        row.employee_email ??
+                        row.employeeEmail ??
+                        ''
+                    )
+                        .trim();
+
+                const product =
+                    normalizeAIProduct(row);
+
+                return {
+
+                    email,
+
+                    product,
+
+                    interactions:
+                        getInteractionValue(row)
+
+                };
+
+            })
+            .filter(
+                row =>
+                    row.email &&
+                    row.product
+            );
+
+    // --------------------------------------------------------
+    // EMPLOYEES
+    // --------------------------------------------------------
+
     const employees = [
 
         ...new Set(
-
-            employeeProducts.map(
-                row =>
-                    row.email
+            normalizedRows.map(
+                row => row.email
             )
-
         )
 
     ];
+
+    // --------------------------------------------------------
+    // PRODUCTS
+    // --------------------------------------------------------
 
     const products = [
 
         ...new Set(
-
-            employeeProducts.map(
-                row =>
-                    row.product
+            normalizedRows.map(
+                row => row.product
             )
-
         )
 
     ];
 
+    // --------------------------------------------------------
+    // DATASETS
+    // --------------------------------------------------------
+
     const datasets =
-        products.map(
-            product => {
+        products.map(product => {
 
-                const color =
-                    getProductColor(
-                        product
-                    );
+            const color =
+                getProductColor(product);
 
-                return {
+            return {
 
-                    label:
-                        formatProductName(
-                            product
-                        ),
+                label:
+                    formatProductName(product),
 
-                    data:
-                        employees.map(
-                            email => {
+                data:
+                    employees.map(email => {
 
-                                const row =
-                                    employeeProducts.find(
-                                        item =>
+                        const matchingRows =
+                            normalizedRows.filter(
+                                row =>
+                                    row.email === email &&
+                                    row.product === product
+                            );
 
-                                            item.email ===
-                                            email
+                        return matchingRows.reduce(
+                            (total, row) =>
+                                total +
+                                row.interactions,
+                            0
+                        );
 
-                                            &&
+                    }),
 
-                                            item.product ===
-                                            product
-                                    );
+                backgroundColor:
+                    color,
 
-                                return row
+                borderColor:
+                    color,
 
-                                    ? Number(
-                                        row.interactions
-                                    ) || 0
+                borderWidth: 1
 
-                                    : 0;
+            };
 
-                            }
-                        ),
+        });
 
-                    backgroundColor:
-                        color,
-
-                    borderColor:
-                        color,
-
-                    borderWidth: 1
-
-                };
-
-            }
-        );
+    // --------------------------------------------------------
+    // CREATE / UPDATE
+    // --------------------------------------------------------
 
     if (employeeAiChart) {
 
@@ -2773,9 +2220,7 @@ function updateEmployeeProductChart(
         employeeAiChart.data.datasets =
             datasets;
 
-        employeeAiChart.update(
-            'none'
-        );
+        employeeAiChart.update('none');
 
         return;
 
@@ -2806,18 +2251,21 @@ function updateEmployeeProductChart(
 
                         x: {
 
-                            stacked:
-                                true
+                            stacked: true
 
                         },
 
                         y: {
 
-                            beginAtZero:
-                                true,
+                            beginAtZero: true,
 
-                            stacked:
-                                true
+                            stacked: true,
+
+                            ticks: {
+
+                                precision: 0
+
+                            }
 
                         }
 
@@ -2851,142 +2299,116 @@ function updateTable(employees) {
         return;
     }
 
-    employees.forEach(
-        employee => {
+    employees.forEach(employee => {
 
-            const row =
-                document.createElement(
-                    'tr'
+        const row =
+            document.createElement('tr');
+
+        const products = {
+
+            gemini:
+                safeNumber(employee.gemini),
+
+            chatgpt:
+                safeNumber(employee.chatgpt),
+
+            claude:
+                safeNumber(employee.claude),
+
+            copilot:
+                safeNumber(employee.copilot),
+
+            perplexity:
+                safeNumber(employee.perplexity),
+
+            qwen:
+                safeNumber(employee.qwen)
+
+        };
+
+        const calculatedTotal =
+            Object.values(products)
+                .reduce(
+                    (sum, value) =>
+                        sum + value,
+                    0
                 );
 
-            const gemini =
-                Number(
-                    employee.gemini
-                ) || 0;
+        const total =
+            Number.isFinite(
+                Number(employee.interactions)
+            )
+                ? Number(employee.interactions)
+                : calculatedTotal;
 
-            const chatgpt =
-                Number(
-                    employee.chatgpt
-                ) || 0;
+        const totalTokens =
+            getTokenValue(employee);
 
-            const claude =
-                Number(
-                    employee.claude
-                ) || 0;
+        row.innerHTML = `
 
-            const copilot =
-                Number(
-                    employee.copilot
-                ) || 0;
+            <td>
+                ${employee.email || '-'}
+            </td>
 
-            const perplexity =
-                Number(
-                    employee.perplexity
-                ) || 0;
+            <td>
+                ${employee.department || '-'}
+            </td>
 
-            const qwen =
-                Number(
-                    employee.qwen
-                ) || 0;
+            <td>
+                ${formatNumber(products.gemini)}
+            </td>
 
-            const total =
-                Number(
-                    employee.interactions
-                ) ||
+            <td>
+                ${formatNumber(products.chatgpt)}
+            </td>
 
-                (
+            <td>
+                ${formatNumber(products.claude)}
+            </td>
 
-                    gemini +
+            <td>
+                ${formatNumber(products.copilot)}
+            </td>
 
-                    chatgpt +
+            <td>
+                ${formatNumber(products.perplexity)}
+            </td>
 
-                    claude +
+            <td>
+                ${formatNumber(products.qwen)}
+            </td>
 
-                    copilot +
+            <td>
+                ${formatNumber(total)}
+            </td>
 
-                    perplexity +
+            <td>
+                ${formatNumber(
+                    getSessionValue(employee)
+                )}
+            </td>
 
-                    qwen
+            <td>
 
-                );
+                ${
+                    employee.avg_latency_ms != null
+                        ? safeNumber(
+                            employee.avg_latency_ms
+                        ).toFixed(0) + ' ms'
+                        : 'N/A'
+                }
 
-            const totalTokens =
-                getTokenValue(
-                    employee
-                );
+            </td>
 
-            row.innerHTML = `
+            <td>
+                ${formatNumber(totalTokens)}
+            </td>
 
-                <td>
-                    ${employee.email || '-'}
-                </td>
+        `;
 
-                <td>
-                    ${employee.department || '-'}
-                </td>
+        table.appendChild(row);
 
-                <td>
-                    ${formatNumber(gemini)}
-                </td>
-
-                <td>
-                    ${formatNumber(chatgpt)}
-                </td>
-
-                <td>
-                    ${formatNumber(claude)}
-                </td>
-
-                <td>
-                    ${formatNumber(copilot)}
-                </td>
-
-                <td>
-                    ${formatNumber(perplexity)}
-                </td>
-
-                <td>
-                    ${formatNumber(qwen)}
-                </td>
-
-                <td>
-                    ${formatNumber(total)}
-                </td>
-
-                <td>
-                    ${formatNumber(
-                        employee.sessions
-                    )}
-                </td>
-
-                <td>
-
-                    ${
-                        employee.avg_latency_ms != null
-
-                            ? Number(
-                                employee.avg_latency_ms
-                            ).toFixed(0) + ' ms'
-
-                            : 'N/A'
-                    }
-
-                </td>
-
-                <td>
-                    ${formatNumber(
-                        totalTokens
-                    )}
-                </td>
-
-            `;
-
-            table.appendChild(
-                row
-            );
-
-        }
-    );
+    });
 
 }
 
@@ -2997,31 +2419,21 @@ function updateTable(employees) {
 function updateAIStatus(products) {
 
     const status =
-        document.querySelector(
-            '.status'
-        );
+        document.querySelector('.status');
 
-    if (!status) {
-        return;
-    }
-
-    if (!Array.isArray(products)) {
+    if (!status || !Array.isArray(products)) {
         return;
     }
 
     const activeProducts =
         products.filter(
-            product =>
-                Number(
-                    product.interactions
-                ) > 0
+            row =>
+                getInteractionValue(row) > 0
         );
 
     status.innerHTML = `
 
-        <span
-            class="status-dot"
-        ></span>
+        <span class="status-dot"></span>
 
         ${activeProducts.length}
 
@@ -3040,7 +2452,272 @@ function updateAIStatus(products) {
 }
 
 // ============================================================
-// INITIAL LOAD
+// LOAD DASHBOARD
+// ============================================================
+
+async function loadDashboard() {
+
+    // Prevent overlapping 5-second refreshes.
+
+    if (dashboardLoading) {
+        return;
+    }
+
+    dashboardLoading = true;
+
+    try {
+
+        const responses =
+            await Promise.all([
+
+                fetch('/api/usage/summary'),
+
+                fetch('/api/usage/by-employee'),
+
+                fetch('/api/usage/by-provider'),
+
+                fetch('/api/usage/by-product'),
+
+                fetch('/api/usage/by-employee-product'),
+
+                fetch('/api/usage/recent')
+
+            ]);
+
+        if (
+            responses.some(
+                response =>
+                    !response.ok
+            )
+        ) {
+
+            throw new Error(
+                'One or more dashboard APIs failed'
+            );
+
+        }
+
+        const [
+
+            summaryResponse,
+            employeeResponse,
+            providerResponse,
+            productResponse,
+            employeeProductResponse,
+            recentResponse
+
+        ] = responses;
+
+        const summary =
+            await summaryResponse.json();
+
+        const employees =
+            await employeeResponse.json();
+
+        const providers =
+            await providerResponse.json();
+
+        const products =
+            await productResponse.json();
+
+        const employeeProducts =
+            await employeeProductResponse.json();
+
+        const recentActivity =
+            await recentResponse.json();
+
+        // ----------------------------------------------------
+        // DEBUG
+        // ----------------------------------------------------
+
+        console.log(
+            '[dashboard] summary:',
+            summary
+        );
+
+        console.log(
+            '[dashboard] employees:',
+            employees
+        );
+
+        console.log(
+            '[dashboard] providers:',
+            providers
+        );
+
+        console.log(
+            '[dashboard] products:',
+            products
+        );
+
+        console.log(
+            '[dashboard] employee-product:',
+            employeeProducts
+        );
+
+        console.log(
+            '[dashboard] recent:',
+            recentActivity
+        );
+
+        // ----------------------------------------------------
+        // COST (USD + MYR)
+        // ----------------------------------------------------
+
+        updateCostDisplay(products);
+
+        updateCostBreakdown(products);
+
+        updateProviderCostChart(products);
+
+        updateCostTypeChart(products);
+
+        // ----------------------------------------------------
+        // CHARTS
+        // ----------------------------------------------------
+
+        updateEmployeeCharts(employees);
+
+        updateProviderCharts(providers);
+
+        updateTokenChart(providers);
+
+        updateEmployeeProductChart(
+            employeeProducts
+        );
+
+        // ----------------------------------------------------
+        // TABLES / STATUS
+        // ----------------------------------------------------
+
+        updateRecentActivity(
+            recentActivity
+        );
+
+        updateTable(
+            employees
+        );
+
+        updateAIStatus(
+            products
+        );
+
+        // ----------------------------------------------------
+        // KPI CARDS
+        // ----------------------------------------------------
+
+        const totalInteractions =
+            document.getElementById(
+                'totalInteractions'
+            );
+
+        const totalSessions =
+            document.getElementById(
+                'totalSessions'
+            );
+
+        const activeUsers =
+            document.getElementById(
+                'activeUsers'
+            );
+
+        const averageLatency =
+            document.getElementById(
+                'averageLatency'
+            );
+
+        const totalTokens =
+            document.getElementById(
+                'totalTokens'
+            );
+
+        if (totalInteractions) {
+
+            totalInteractions.textContent =
+                formatNumber(
+                    summary.interactions ??
+                    summary.total_interactions ??
+                    0
+                );
+
+        }
+
+        if (totalSessions) {
+
+            totalSessions.textContent =
+                formatNumber(
+                    summary.sessions ??
+                    summary.total_sessions ??
+                    0
+                );
+
+        }
+
+        if (activeUsers) {
+
+            activeUsers.textContent =
+                formatNumber(
+                    summary.active_employees ??
+                    summary.active_users ??
+                    0
+                );
+
+        }
+
+        if (averageLatency) {
+
+            averageLatency.textContent =
+                summary.avg_latency_ms != null
+                    ? `${safeNumber(
+                        summary.avg_latency_ms
+                    ).toFixed(0)} ms`
+                    : 'N/A';
+
+        }
+
+        if (totalTokens) {
+
+            totalTokens.textContent =
+                formatNumber(
+                    getTokenValue(summary)
+                );
+
+        }
+
+        // ----------------------------------------------------
+        // LAST UPDATED
+        // ----------------------------------------------------
+
+        const lastUpdated =
+            document.getElementById(
+                'lastUpdated'
+            );
+
+        if (lastUpdated) {
+
+            lastUpdated.textContent =
+                new Date()
+                    .toLocaleTimeString();
+
+        }
+
+    } catch (error) {
+
+        console.error(
+            '[dashboard] Loading failed:',
+            error
+        );
+
+    } finally {
+
+        dashboardLoading = false;
+
+    }
+
+}
+
+// ============================================================
+// INITIALIZE
 // ============================================================
 
 async function initializeDashboard() {
@@ -3059,21 +2736,14 @@ initializeDashboard();
 // AUTO REFRESH
 // ============================================================
 
-// Refresh dashboard every 5 seconds.
-//
-// BNM itself is cached on the server, so this does NOT
-// request BNM directly every 5 seconds.
-
 setInterval(
     loadDashboard,
     5000
 );
 
 // ============================================================
-// BNM RATE REFRESH
+// BNM REFRESH
 // ============================================================
-
-// Refresh BNM rate every 15 minutes.
 
 setInterval(
     loadBnmExchangeRate,

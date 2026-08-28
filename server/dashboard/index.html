@@ -1,562 +1,658 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
-    <title>AI Observability Dashboard</title>
+<title>AI Observability Dashboard</title>
 
-    <link rel="stylesheet" href="/style.css">
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        font-family:
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            Roboto,
+            Arial,
+            sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+    }
+
+    /* =====================================================
+       HEADER
+    ===================================================== */
+
+    .header {
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 22px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .header-left h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+    }
+
+    .header-left p {
+        margin: 5px 0 0;
+        color: #64748b;
+        font-size: 14px;
+    }
+
+    .header-right {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #334155;
+    }
+
+    .status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #22c55e;
+        display: inline-block;
+    }
+
+    .last-updated {
+        color: #64748b;
+        font-size: 13px;
+    }
+
+    /* =====================================================
+       PAGE
+    ===================================================== */
+
+    .container {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 30px 32px 50px;
+    }
+
+    /* =====================================================
+       KPI CARDS
+    ===================================================== */
+
+    .kpi-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+        gap: 18px;
+        margin-bottom: 24px;
+    }
+
+    .kpi-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 22px;
+        min-height: 125px;
+        box-shadow:
+            0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .kpi-label {
+        font-size: 13px;
+        color: #64748b;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .kpi-value {
+        font-size: 30px;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.1;
+    }
+
+    .kpi-description {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #94a3b8;
+    }
+
+    /* =====================================================
+       SECTION
+    ===================================================== */
+
+    .section {
+        margin-top: 24px;
+    }
+
+    .section-header {
+        margin-bottom: 14px;
+    }
+
+    .section-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    .section-subtitle {
+        margin: 5px 0 0;
+        font-size: 13px;
+        color: #64748b;
+    }
+
+    /* =====================================================
+       CHART GRID
+    ===================================================== */
+
+    .chart-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+        gap: 24px;
+    }
+
+    .chart-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 22px;
+        box-shadow:
+            0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .chart-header {
+        margin-bottom: 18px;
+    }
+
+    .chart-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    .chart-description {
+        margin: 5px 0 0;
+        font-size: 12px;
+        color: #64748b;
+    }
+
+    .chart-container {
+        position: relative;
+        width: 100%;
+        height: 380px;
+    }
+
+    /* =====================================================
+       FOOTER
+    ===================================================== */
+
+    .footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        color: #94a3b8;
+        font-size: 12px;
+    }
+
+    /* =====================================================
+       RESPONSIVE
+    ===================================================== */
+
+    @media (max-width: 1200px) {
+        .kpi-grid {
+            grid-template-columns:
+                repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 900px) {
+
+        .chart-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .kpi-grid {
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+        }
+
+        .header {
+            align-items: flex-start;
+            gap: 15px;
+            flex-direction: column;
+        }
+    }
+
+    @media (max-width: 600px) {
+
+        .container {
+            padding:
+                20px 15px 40px;
+        }
+
+        .header {
+            padding:
+                18px 15px;
+        }
+
+        .kpi-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .chart-container {
+            height: 300px;
+        }
+
+        .footer {
+            flex-direction: column;
+            gap: 8px;
+        }
+    }
+</style>
+
 </head>
 
 <body>
 
-<!-- ============================================================
+<!-- =====================================================
      HEADER
-============================================================ -->
+====================================================== -->
 
-<header class="dashboard-header">
+<header class="header">
 
-    <div>
-        <h1>AI Observability</h1>
+    <div class="header-left">
+
+        <h1>
+            AI Observability Dashboard
+        </h1>
 
         <p>
-            Enterprise AI Usage &amp; Performance Dashboard
+            Enterprise AI usage, performance and activity monitoring
         </p>
+
     </div>
 
-    <div class="header-status">
+    <div class="header-right">
 
-        <span class="status-dot"></span>
+        <div class="status">
 
-        <span>
-            System Online
-        </span>
+            <span class="status-dot"></span>
+
+            <span>
+                AI Products Connected
+            </span>
+
+        </div>
+
+        <div class="last-updated">
+
+            Updated:
+
+            <span id="lastUpdated">
+                —
+            </span>
+
+        </div>
 
     </div>
 
 </header>
 
 
-<!-- ============================================================
-     MAIN DASHBOARD
-============================================================ -->
+<!-- =====================================================
+     MAIN
+====================================================== -->
 
-<main class="dashboard-container">
+<main class="container">
 
 
-    <!-- ========================================================
+    <!-- =================================================
          KPI CARDS
-    ========================================================= -->
+    ================================================== -->
 
-    <section class="metrics-grid">
+    <section>
 
+        <div class="section-header">
 
-        <!-- AI INTERACTIONS -->
+            <h2 class="section-title">
+                AI Usage Overview
+            </h2>
 
-        <div class="metric-card">
-
-            <div class="metric-label">
-                AI Interactions
-            </div>
-
-            <div
-                id="totalInteractions"
-                class="metric-value"
-            >
-                0
-            </div>
-
-            <div class="metric-description">
-                Total AI interactions
-            </div>
+            <p class="section-subtitle">
+                Key metrics across all monitored AI platforms
+            </p>
 
         </div>
 
 
-        <!-- AI SESSIONS -->
+        <div class="kpi-grid">
 
-        <div class="metric-card">
 
-            <div class="metric-label">
-                AI Sessions
+            <!-- AI INTERACTIONS -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    AI Interactions
+                </div>
+
+                <div
+                    class="kpi-value"
+                    id="totalInteractions"
+                >
+                    0
+                </div>
+
+                <div class="kpi-description">
+                    Total AI interactions recorded
+                </div>
+
             </div>
 
-            <div
-                id="totalSessions"
-                class="metric-value"
-            >
-                0
+
+            <!-- AI SESSIONS -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    AI Sessions
+                </div>
+
+                <div
+                    class="kpi-value"
+                    id="totalSessions"
+                >
+                    0
+                </div>
+
+                <div class="kpi-description">
+                    Unique AI usage sessions
+                </div>
+
             </div>
 
-            <div class="metric-description">
-                Active conversation sessions
+
+            <!-- ACTIVE USERS -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    Active Employees
+                </div>
+
+                <div
+                    class="kpi-value"
+                    id="activeUsers"
+                >
+                    0
+                </div>
+
+                <div class="kpi-description">
+                    Employees using AI platforms
+                </div>
+
+            </div>
+
+
+            <!-- LATENCY -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    Average Latency
+                </div>
+
+                <div
+                    class="kpi-value"
+                    id="averageLatency"
+                >
+                    0 ms
+                </div>
+
+                <div class="kpi-description">
+                    Average AI response latency
+                </div>
+
+            </div>
+
+
+            <!-- TOTAL TOKENS -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    Total Tokens
+                </div>
+
+                <div
+                    class="kpi-value"
+                    id="totalTokens"
+                >
+                    0
+                </div>
+
+                <div class="kpi-description">
+                    Estimated input and output tokens
+                </div>
+
+            </div>
+
+
+            <!-- ESTIMATED COST USD -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    Estimated Cost (USD)
+                </div>
+
+                <div
+                    id="totalCost"
+                    class="kpi-value"
+                >
+                    $0.00
+                </div>
+
+                <div class="kpi-description">
+                    Total AI usage cost
+                </div>
+
+            </div>
+
+
+            <!-- USD TO MYR -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    USD → MYR
+                </div>
+
+                <div
+                    class="kpi-value"
+                    id="usdMyrRate"
+                >
+                    Loading...
+                </div>
+
+                <div
+                    class="kpi-description"
+                    id="usdMyrDescription"
+                >
+                    BNM middle rate
+                </div>
+
+            </div>
+
+
+            <!-- ESTIMATED COST MYR -->
+
+            <div class="kpi-card">
+
+                <div class="kpi-label">
+                    Estimated Cost (MYR)
+                </div>
+
+                <div
+                    id="totalCostMyr"
+                    class="kpi-value"
+                >
+                    Loading...
+                </div>
+
+                <div
+                    id="totalCostMyrDescription"
+                    class="kpi-description"
+                >
+                    Converted from USD
+                </div>
+
             </div>
 
         </div>
-
-
-        <!-- ACTIVE USERS -->
-
-        <div class="metric-card">
-
-            <div class="metric-label">
-                Active Users
-            </div>
-
-            <div
-                id="activeUsers"
-                class="metric-value"
-            >
-                0
-            </div>
-
-            <div class="metric-description">
-                Employees using AI
-            </div>
-
-        </div>
-
-
-        <!-- AVERAGE LATENCY -->
-
-        <div class="metric-card">
-
-            <div class="metric-label">
-                Average Latency
-            </div>
-
-            <div
-                id="averageLatency"
-                class="metric-value"
-            >
-                0 ms
-            </div>
-
-            <div class="metric-description">
-                Average AI response time
-            </div>
-
-        </div>
-
-
-        <!-- ESTIMATED TOKENS -->
-
-        <div class="metric-card">
-
-            <div class="metric-label">
-                Estimated Tokens
-            </div>
-
-            <div
-                id="totalTokens"
-                class="metric-value"
-            >
-                0
-            </div>
-
-            <div class="metric-description">
-                Total tokens processed
-            </div>
-
-        </div>
-
-
-        <!-- ESTIMATED COST -->
-
-        <div class="metric-card">
-
-            <div class="metric-label">
-                Estimated Cost
-            </div>
-
-            <div
-                id="totalCost"
-                class="metric-value"
-            >
-                $0.00
-            </div>
-
-            <div class="metric-description">
-                Total AI usage cost
-            </div>
-
-        </div>
-
-
-        <!-- USD TO MYR -->
-
-        <div class="metric-card">
-
-            <div class="metric-label">
-                USD → MYR
-            </div>
-
-            <div
-                id="usdMyrRate"
-                class="metric-value"
-            >
-                Loading...
-            </div>
-
-            <div
-                id="usdMyrDescription"
-                class="metric-description"
-            >
-                Current exchange rate
-            </div>
-
-        </div>
-
 
     </section>
 
 
-    <!-- ========================================================
+    <!-- =================================================
          CHARTS
-    ========================================================= -->
+    ================================================== -->
 
-    <section class="charts-grid">
+    <section class="section">
 
+        <div class="section-header">
 
-        <!-- EMPLOYEE INTERACTIONS -->
+            <h2 class="section-title">
+                AI Usage & Performance
+            </h2>
 
-        <div class="chart-card">
-
-            <div class="chart-header">
-
-                <div>
-
-                    <h2>
-                        Interactions by Employee
-                    </h2>
-
-                    <p>
-                        AI activity across employees
-                    </p>
-
-                </div>
-
-            </div>
-
-            <div class="chart-container">
-
-                <canvas
-                    id="employeeInteractionChart"
-                ></canvas>
-
-            </div>
+            <p class="section-subtitle">
+                Employee usage distribution and provider response performance
+            </p>
 
         </div>
 
 
-        <!-- PROVIDER INTERACTIONS -->
-
-        <div class="chart-card">
-
-            <div class="chart-header">
-
-                <div>
-
-                    <h2>
-                        Interactions by Provider
-                    </h2>
-
-                    <p>
-                        AI usage by provider
-                    </p>
-
-                </div>
-
-            </div>
-
-            <div class="chart-container">
-
-                <canvas
-                    id="providerInteractionChart"
-                ></canvas>
-
-            </div>
-
-        </div>
+        <div class="chart-grid">
 
 
-        <!-- PROVIDER SESSIONS -->
+            <!-- =================================================
+                 EMPLOYEE AI USAGE
+            ================================================== -->
 
-        <div class="chart-card">
+            <div class="chart-card">
 
-            <div class="chart-header">
+                <div class="chart-header">
 
-                <div>
-
-                    <h2>
-                        Sessions by Provider
-                    </h2>
-
-                    <p>
-                        Conversation sessions across AI providers
-                    </p>
-
-                </div>
-
-            </div>
-
-            <div class="chart-container">
-
-                <canvas
-                    id="providerSessionChart"
-                ></canvas>
-
-            </div>
-
-        </div>
-
-
-        <!-- EMPLOYEE AI USAGE -->
-
-        <div class="chart-card">
-
-            <div class="chart-header">
-
-                <div>
-
-                    <h2>
+                    <h3 class="chart-title">
                         Employee AI Usage
-                    </h2>
+                    </h3>
 
-                    <p>
-                        AI activity across employees and products
+                    <p class="chart-description">
+                        Number of AI interactions by employee and platform
                     </p>
+
+                </div>
+
+                <div class="chart-container">
+
+                    <canvas
+                        id="employeeAiChart"
+                    ></canvas>
 
                 </div>
 
             </div>
 
-            <div class="chart-container">
 
-                <canvas
-                    id="employeeAiChart"
-                ></canvas>
+            <!-- =================================================
+                 LATENCY BY PROVIDER
+            ================================================== -->
+
+            <div class="chart-card">
+
+                <div class="chart-header">
+
+                    <h3 class="chart-title">
+                        Latency by Provider
+                    </h3>
+
+                    <p class="chart-description">
+                        Average response latency for each AI provider
+                    </p>
+
+                </div>
+
+                <div class="chart-container">
+
+                    <canvas
+                        id="latencyChart"
+                    ></canvas>
+
+                </div>
 
             </div>
 
         </div>
-
 
     </section>
 
 
-    <!-- ========================================================
-         RECENT AI ACTIVITY
-    ========================================================= -->
+    <!-- =================================================
+         FOOTER
+    ================================================== -->
 
-    <section class="table-card">
+    <footer class="footer">
 
+        <span>
+            AI Observability
+        </span>
 
-        <div class="table-header">
+        <span>
+            Auto-refresh: 5 seconds
+        </span>
 
-            <div>
-
-                <h2>
-                    Recent AI Activity
-                </h2>
-
-                <p>
-                    Latest recorded AI interactions
-                </p>
-
-            </div>
-
-
-            <button
-                id="refreshDashboard"
-                class="refresh-button"
-                type="button"
-            >
-                Refresh
-            </button>
-
-        </div>
-
-
-        <div class="table-wrapper">
-
-            <table>
-
-                <thead>
-
-                    <tr>
-
-                        <th>
-                            Employee
-                        </th>
-
-                        <th>
-                            Provider
-                        </th>
-
-                        <th>
-                            Model
-                        </th>
-
-                        <th>
-                            Latency
-                        </th>
-
-                        <th>
-                            Tokens
-                        </th>
-
-                        <th>
-                            Cost
-                        </th>
-
-                        <th>
-                            Time
-                        </th>
-
-                    </tr>
-
-                </thead>
-
-
-                <tbody id="recentActivityTable">
-
-                    <tr>
-
-                        <td
-                            colspan="7"
-                            class="empty-state"
-                        >
-                            Loading usage data...
-                        </td>
-
-                    </tr>
-
-                </tbody>
-
-            </table>
-
-        </div>
-
-
-    </section>
-
+    </footer>
 
 </main>
 
 
-<!-- ============================================================
-     FOOTER
-============================================================ -->
+<!-- =====================================================
+     DASHBOARD JAVASCRIPT
 
-<footer class="dashboard-footer">
+     dashboard.js owns all data fetching and rendering,
+     including the BNM USD -> MYR exchange rate and the
+     resulting cost-in-MYR figures. There is intentionally
+     no other script on this page duplicating that logic.
+====================================================== -->
 
-    <span>
-        AI Observability Platform
-    </span>
-
-    <span>
-        PostgreSQL &bull; OpenRouter
-    </span>
-
-</footer>
-
-
-<!-- ============================================================
-     CHART.JS
-============================================================ -->
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-
-<!-- ============================================================
-     DASHBOARD SCRIPT
-============================================================ -->
-
-<script src="/dashboard.js"></script>
-
-
-<!-- ============================================================
-     USD → MYR EXCHANGE RATE
-============================================================ -->
-
-<script>
-
-async function loadUsdMyrRate() {
-
-    const rateElement =
-        document.getElementById("usdMyrRate");
-
-    const descriptionElement =
-        document.getElementById("usdMyrDescription");
-
-
-    try {
-
-        const response = await fetch(
-            "https://open.er-api.com/v6/latest/USD"
-        );
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                "Exchange rate request failed"
-            );
-
-        }
-
-
-        const data =
-            await response.json();
-
-
-        const rate =
-            data.rates.MYR;
-
-
-        if (!rate) {
-
-            throw new Error(
-                "MYR exchange rate unavailable"
-            );
-
-        }
-
-
-        rateElement.textContent =
-            `RM ${Number(rate).toFixed(2)}`;
-
-
-        descriptionElement.textContent =
-            `1 USD = RM ${Number(rate).toFixed(4)}`;
-
-
-    } catch (error) {
-
-        console.error(
-            "Unable to load USD → MYR rate:",
-            error
-        );
-
-
-        rateElement.textContent =
-            "Unavailable";
-
-
-        descriptionElement.textContent =
-            "Exchange rate unavailable";
-
-    }
-
-}
-
-
-loadUsdMyrRate();
-
-</script>
-
+<script src="dashboard.js"></script>
 
 </body>
+
 </html>
