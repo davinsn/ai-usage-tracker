@@ -147,7 +147,7 @@ function formatPreciseUsd(value) {
         return '$' + number.toFixed(6);
     }
 
-    return '$' + number.toFixed(4);
+    return '$' + number.toFixed(2);
 
 }
 
