@@ -1771,6 +1771,86 @@ async function loadDashboard() {
         const summary =
             await summaryResponse.json();
 
+        console.log("[dashboard] SUMMARY:", summary);
+
+        console.log(
+            "[dashboard] INTERACTIONS:",
+            summary.interactions
+        );
+
+        console.log(
+            "[dashboard] SESSIONS:",
+            summary.sessions
+        );
+
+        console.log(
+            "[dashboard] EMPLOYEES:",
+            summary.active_employees
+        );
+
+        console.log(
+            "[dashboard] TOKENS:",
+            summary.total_tokens
+        );
+
+
+        // ============================================================
+        // UPDATE KPI CARDS
+        // ============================================================
+
+        const interactionsElement =
+            document.getElementById("totalInteractions");
+
+        const sessionsElement =
+            document.getElementById("totalSessions");
+
+        const employeesElement =
+            document.getElementById("activeUsers");
+
+        const latencyElement =
+            document.getElementById("averageLatency");
+
+        const tokensElement =
+            document.getElementById("totalTokens");
+
+        const costElement =
+            document.getElementById("totalCost");
+
+
+        if (interactionsElement) {
+            interactionsElement.textContent =
+                Number(summary.interactions || 0).toLocaleString();
+        }
+
+        if (sessionsElement) {
+            sessionsElement.textContent =
+                Number(summary.sessions || 0).toLocaleString();
+        }
+
+        if (employeesElement) {
+            employeesElement.textContent =
+                Number(summary.active_employees || 0).toLocaleString();
+        }
+
+        if (latencyElement) {
+            latencyElement.textContent =
+                `${Math.round(
+                    Number(summary.avg_latency_ms || 0)
+                )} ms`;
+        }
+
+        if (tokensElement) {
+            tokensElement.textContent =
+                Number(summary.total_tokens || 0).toLocaleString();
+        }
+
+        if (costElement) {
+            costElement.textContent =
+                `$${Number(
+                    summary.total_cost_usd || 0
+                ).toFixed(6)}`;
+        }
+
         const employees =
             await employeeResponse.json();
 
