@@ -43,31 +43,31 @@ const AI_PRODUCTS = {
     gemini: {
         name: 'Gemini',
         provider: 'Google',
-        color: '#4285F4'
+        color: '#4796E3'
     },
 
     chatgpt: {
         name: 'ChatGPT',
         provider: 'OpenAI',
-        color: '#10A37F'
+        color: '#74AA9C'
     },
 
     claude: {
         name: 'Claude',
         provider: 'Anthropic',
-        color: '#D97757'
+        color: '#DE7356'
     },
 
     copilot: {
         name: 'Copilot',
         provider: 'Microsoft',
-        color: '#6366F1'
+        color: '#8a50d8'
     },
 
     perplexity: {
         name: 'Perplexity',
         provider: 'Perplexity',
-        color: '#20B8CD'
+        color: '#21808D'
     },
 
     qwen: {
