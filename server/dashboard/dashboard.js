@@ -889,7 +889,7 @@ function updateCostDisplay(rows) {
 
         myrDescriptionElement.textContent =
             hasRate
-                ? `${formatPreciseUsd(displayedUsd)} × ${currentBnmRate.toFixed(4)}`
+                ? `${formatPreciseUsd(displayedUsd)} × ${currentBnmRate.toFixed(2)}`
                 : 'Currency conversion unavailable';
 
     }
