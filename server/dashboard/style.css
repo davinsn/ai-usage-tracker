@@ -91,6 +91,51 @@ body {
     flex-shrink: 0;
 }
 
+/* =====================================================
+   DASHBOARD GUIDE
+====================================================== */
+
+.dashboard-guide {
+    margin-bottom: 32px;
+}
+
+.guide-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.guide-item {
+    padding: 18px 20px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.guide-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 7px;
+}
+
+.guide-description {
+    font-size: 13px;
+    line-height: 1.55;
+    color: #6b7280;
+}
+
+@media (max-width: 1000px) {
+    .guide-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 650px) {
+    .guide-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 
 /* ============================================================
    SYSTEM STATUS

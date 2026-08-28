@@ -67,6 +67,145 @@
 
 </header>
 
+<!-- =====================================================
+     DASHBOARD GUIDE
+====================================================== -->
+
+<section class="dashboard-guide">
+    <div class="section-header">
+        <h2 class="section-title">
+            Dashboard Guide
+        </h2>
+
+        <p class="section-subtitle">
+            Definitions and explanations for the metrics shown on this dashboard
+        </p>
+    </div>
+
+    <div class="guide-grid">
+
+        <div class="guide-item">
+            <div class="guide-title">
+                AI Interactions
+            </div>
+            <div class="guide-description">
+                Total number of completed AI requests recorded.
+                Each completed prompt-and-response exchange counts as one interaction.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                AI Sessions
+            </div>
+            <div class="guide-description">
+                Unique periods of AI usage associated with an employee
+                and an AI platform.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Active Employees
+            </div>
+            <div class="guide-description">
+                Number of employees with recorded AI activity.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Average Latency
+            </div>
+            <div class="guide-description">
+                Average time taken for an AI request to receive a response,
+                measured in milliseconds (ms).
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Tokens
+            </div>
+            <div class="guide-description">
+                Total amount of text processed by the AI model, including
+                input (prompt) and output (response) tokens.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Estimated Cost (USD)
+            </div>
+            <div class="guide-description">
+                Estimated total AI usage cost based on token consumption
+                and the applicable model pricing.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Estimated Cost (MYR)
+            </div>
+            <div class="guide-description">
+                Estimated AI usage cost converted from USD using the
+                displayed BNM USD → MYR exchange rate.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                AI Platform
+            </div>
+            <div class="guide-description">
+                The AI product being used, such as ChatGPT, Gemini,
+                Claude, Copilot, or Perplexity.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Provider
+            </div>
+            <div class="guide-description">
+                The company providing the underlying AI model, such as
+                OpenAI, Google, Anthropic, or Microsoft.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Latency by Provider
+            </div>
+            <div class="guide-description">
+                Compares the average AI response time across different
+                underlying AI providers.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Cost % of Total
+            </div>
+            <div class="guide-description">
+                Percentage of the organization's total AI spending
+                attributed to each AI platform.
+            </div>
+        </div>
+
+        <div class="guide-item">
+            <div class="guide-title">
+                Data Source
+            </div>
+            <div class="guide-description">
+                Usage data is collected from monitored AI activity and
+                normalized into a common observability format.
+            </div>
+        </div>
+
+    </div>
+</section>
+
 
 <!-- =====================================================
      MAIN
@@ -135,7 +274,7 @@
                 </div>
 
                 <div class="kpi-description">
-                    Unique AI usage sessions (1 session = 1 employee using 1 AI platform)
+                    Unique AI usage sessions
                 </div>
 
             </div>
