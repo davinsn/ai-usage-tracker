@@ -358,6 +358,47 @@ body {
 }
 
 
+
+/* ============================================================
+   SORTABLE COST / TOKEN / LATENCY COLUMNS
+   ============================================================ */
+
+.data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.data-table th.sortable:hover {
+    background: #f1f5f9;
+    color: #344054;
+}
+
+.sort-indicator {
+    display: inline-block;
+
+    margin-left: 5px;
+
+    color: #98a2b3;
+
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.data-table th.sort-asc,
+.data-table th.sort-desc {
+    color: #172033;
+}
+
+.data-table th.sort-asc .sort-indicator,
+.data-table th.sort-desc .sort-indicator {
+    color: #344054;
+}
+
+
 /* ============================================================
    CHART GRID
    ============================================================ */

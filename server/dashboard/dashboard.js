@@ -16,6 +16,9 @@ let providerTokenChart = null;
 let providerCostChart = null;
 let costTypeChart = null;
 
+let currentSortColumn = null;
+let currentSortDirection = 'asc';
+
 // ============================================================
 // GLOBAL DATA
 // ============================================================
@@ -392,6 +395,22 @@ function calculateTotalUsdCost(rows) {
         0
     );
 
+}
+
+// ============================================================
+// SORT COST BREAKDOWN TABLE
+// ============================================================
+
+function sortCostBreakdownTable(rows, column, direction) {
+    return [...rows].sort((a, b) => {
+
+        const valueA = Number(a[column]) || 0;
+        const valueB = Number(b[column]) || 0;
+
+        return direction === "asc"
+            ? valueA - valueB
+            : valueB - valueA;
+    });
 }
 
 // ============================================================
@@ -1211,7 +1230,7 @@ function updateCostBreakdown(rows) {
     const breakdown =
         calculateCostBreakdown(rows);
 
-    const items =
+    let items =
         Object.values(breakdown)
             .filter(item =>
                 item.usd > 0 ||
@@ -1229,23 +1248,95 @@ function updateCostBreakdown(rows) {
     if (items.length === 0) {
 
         table.innerHTML = `
-
             <tr>
-
                 <td
                     colspan="8"
                     style="text-align:center;"
                 >
                     No cost data available
                 </td>
-
             </tr>
-
         `;
 
         return;
-
     }
+
+
+    // ============================================================
+    // SORT TABLE
+    // ============================================================
+
+    if (currentSortColumn) {
+
+        items.sort((a, b) => {
+
+            let valueA;
+            let valueB;
+
+            switch (currentSortColumn) {
+
+                case "tokens":
+                    valueA = Number(a.totalTokens) || 0;
+                    valueB = Number(b.totalTokens) || 0;
+                    break;
+
+                case "latency":
+                    valueA =
+                        a.avgLatencyMs !== null
+                            ? Number(a.avgLatencyMs)
+                            : 0;
+
+                    valueB =
+                        b.avgLatencyMs !== null
+                            ? Number(b.avgLatencyMs)
+                            : 0;
+                    break;
+
+                case "costUsd":
+                    valueA = Number(a.usd) || 0;
+                    valueB = Number(b.usd) || 0;
+                    break;
+
+                case "costMyr":
+                    valueA =
+                        currentBnmRate !== null
+                            ? (Number(a.usd) || 0) * currentBnmRate
+                            : 0;
+
+                    valueB =
+                        currentBnmRate !== null
+                            ? (Number(b.usd) || 0) * currentBnmRate
+                            : 0;
+                    break;
+
+                case "costPercent":
+                    valueA =
+                        totalUsd > 0
+                            ? ((Number(a.usd) || 0) / totalUsd) * 100
+                            : 0;
+
+                    valueB =
+                        totalUsd > 0
+                            ? ((Number(b.usd) || 0) / totalUsd) * 100
+                            : 0;
+                    break;
+
+                default:
+                    return 0;
+            }
+
+            if (currentSortDirection === "asc") {
+                return valueA - valueB;
+            }
+
+            return valueB - valueA;
+        });
+    }
+
+
+    // ============================================================
+    // BUILD TABLE
+    // ============================================================
 
     let html = '';
 
@@ -1257,11 +1348,9 @@ function updateCostBreakdown(rows) {
                 : 0;
 
         html += `
-
             <tr>
 
                 <td>
-
                     <div class="cost-product-name">
 
                         <span
@@ -1277,7 +1366,6 @@ function updateCostBreakdown(rows) {
                         </strong>
 
                     </div>
-
                 </td>
 
                 <td>
@@ -1328,10 +1416,13 @@ function updateCostBreakdown(rows) {
                 </td>
 
             </tr>
-
         `;
-
     });
+
+
+    // ============================================================
+    // TOTALS
+    // ============================================================
 
     const totalInteractions =
         items.reduce(
@@ -1370,11 +1461,16 @@ function updateCostBreakdown(rows) {
 
     const overallAvgLatencyMs =
         totalLatencyWeight > 0
-            ? totalLatencyWeightedSum / totalLatencyWeight
+            ? totalLatencyWeightedSum /
+              totalLatencyWeight
             : null;
 
-    html += `
 
+    // ============================================================
+    // TOTAL ROW
+    // ============================================================
+
+    html += `
         <tr>
 
             <td>
@@ -1416,9 +1512,7 @@ function updateCostBreakdown(rows) {
             </td>
 
             <td>
-
                 <strong>
-
                     ${
                         currentBnmRate !== null
                             ? formatMyr(
@@ -1427,9 +1521,7 @@ function updateCostBreakdown(rows) {
                             )
                             : 'N/A'
                     }
-
                 </strong>
-
             </td>
 
             <td>
@@ -1437,11 +1529,10 @@ function updateCostBreakdown(rows) {
             </td>
 
         </tr>
-
     `;
 
-    table.innerHTML = html;
 
+    table.innerHTML = html;
 }
 
 // ============================================================
@@ -1551,6 +1642,31 @@ function updateRecentActivity(activity) {
     });
 
 }
+
+document.querySelectorAll(".data-table th.sortable").forEach((header) => {
+
+    header.addEventListener("click", () => {
+
+        const column = header.dataset.sort;
+
+        if (currentSortColumn === column) {
+
+            currentSortDirection =
+                currentSortDirection === "asc"
+                    ? "desc"
+                    : "asc";
+
+        } else {
+
+            currentSortColumn = column;
+            currentSortDirection = "asc";
+        }
+
+        updateCostBreakdown();
+
+    });
+
+});
 
 // ============================================================
 // DEMO MODE
