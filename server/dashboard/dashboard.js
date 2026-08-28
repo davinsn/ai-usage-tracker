@@ -1626,7 +1626,7 @@ function updateRecentActivity(activity) {
         </td>
 
         <td>
-            ${row.event_type || '-'}
+            ${row.latency_ms || '-'}
         </td>
 
         <td>
